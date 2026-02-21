@@ -1,6 +1,6 @@
 # Godot MCP Server
 
-MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. Provides **60 tools** across 8 categories for scene manipulation, script generation, shader creation, UI building, procedural generation, and live editor control.
+MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. Provides **90 tools** across 13 categories for scene manipulation, script generation, shader creation, animation workflows, InputMap control setup, audio routing/player setup, navigation setup, UI building, procedural generation, project setup, and live editor control.
 
 > **Recommended:** For the best experience, pair this MCP with the [Godot Claude Skills](https://github.com/alexmeckes/godot-claude-skills) plugin. The MCP provides **tools** (read/write/edit capabilities) while the skills provide **knowledge** (GDScript best practices, scene design patterns, shader techniques). Together they give Claude deep Godot expertise.
 
@@ -11,6 +11,10 @@ MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. 
 - **Script Tools**: Generate and analyze GDScript files
 - **Shader Tools**: Create shaders with 11 preset effects (dissolve, outline, hologram, etc.)
 - **Resource Tools**: Manage `.tres` resource files
+- **Animation Tools**: Create and edit animation clips, keyframes, and scene animation setup
+- **Input Tools**: Manage `InputMap` actions/bindings and apply control presets
+- **Audio Tools**: Create bus layouts and configure `AudioStreamPlayer` nodes
+- **Navigation Tools**: Set up navigation regions, agents, and links in scene files
 - **UI Tools**: Create themes, menus, HUDs, dialogs, and responsive layouts
 - **Procedural Generation**: Dungeons, tilemaps, and enemy wave configurations
 
@@ -23,14 +27,20 @@ MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. 
 
 ### Documentation
 - Built-in Godot 4.x class documentation
-- Searchable API reference for 200+ classes
+- Searchable API reference for commonly used engine classes
 
 ## Quick Start
 
 **Not sure which tool to use?** Call `godot_help` first:
 
 ```
-godot_help                           # Overview of all 60 tools
+godot_help                           # Overview of all 90 tools
+godot_help tool="godot_write_scene" # Standardized inputs/constraints/output template
+godot_help category="coverage"      # Coverage matrix + prioritized roadmap
+godot_help category="animation"     # Animation clip and scene animation tools
+godot_help category="input"         # InputMap actions, bindings, and presets
+godot_help category="audio"         # Bus layout and AudioStreamPlayer tools
+godot_help category="navigation"    # Navigation region/agent/link setup tools
 godot_help category="scenes"         # Scene manipulation tools
 godot_help category="ui"             # UI creation tools
 godot_help task="create a menu"      # Get suggestions for a task
@@ -85,7 +95,17 @@ Options:
 
 ---
 
-## All 60 Tools
+## Coverage Roadmap
+
+See `docs/COVERAGE_MATRIX.md` for:
+- current subsystem coverage (`Strong`/`Partial`/`Minimal`/`Missing`)
+- high-impact gaps
+- phased implementation priorities
+- the same info is available via `godot_help category="coverage"`
+
+---
+
+## All 90 Tools
 
 ### Scene Tools (8 tools)
 
@@ -149,6 +169,57 @@ Options:
 | `godot_write_resource` | Create or update a resource file |
 | `godot_list_resources` | List all .tres files in project |
 
+### Animation Tools (8 tools)
+
+| Tool | Description |
+|------|-------------|
+| `godot_animation_create_clip` | Create an Animation resource with tracks and keyframes |
+| `godot_animation_read_clip` | Read an Animation resource into structured data |
+| `godot_animation_add_keyframe` | Add a keyframe to an existing track |
+| `godot_animation_remove_keyframe` | Remove keyframes by index or time |
+| `godot_animation_list_clips` | List Animation resource files in project |
+| `godot_animation_setup_scene` | Add/configure AnimationPlayer and AnimationTree in a scene |
+| `godot_animation_build_state_machine_plan` | Build state machine config/script plans for AnimationTree |
+| `godot_animation_build_blend_space_plan` | Build blend-space config/script plans for AnimationTree |
+
+### Input Tools (6 tools)
+
+| Tool | Description |
+|------|-------------|
+| `godot_input_list_actions` | List InputMap actions with deadzones and binding counts |
+| `godot_input_get_action` | Read one InputMap action and its bindings |
+| `godot_input_set_action` | Create/update InputMap actions and bindings |
+| `godot_input_remove_action` | Remove an InputMap action |
+| `godot_input_list_presets` | List built-in control presets |
+| `godot_input_apply_preset` | Apply a control preset to InputMap |
+
+### Audio Tools (9 tools)
+
+| Tool | Description |
+|------|-------------|
+| `godot_audio_create_bus_layout` | Create or overwrite an AudioBusLayout resource |
+| `godot_audio_read_bus_layout` | Read an AudioBusLayout resource as structured bus data |
+| `godot_audio_set_bus` | Create/update a named bus (send, volume, mute, solo, bypass) |
+| `godot_audio_remove_bus` | Remove a bus from a layout |
+| `godot_audio_list_players` | List AudioStreamPlayer nodes and their bus/stream settings |
+| `godot_audio_configure_player` | Configure stream/bus/volume/pitch/autoplay on a player node |
+| `godot_audio_list_effect_presets` | List built-in effect-chain presets |
+| `godot_audio_generate_effect_chain_script` | Generate AudioServer script for applying an effect preset |
+| `godot_audio_apply_mix_profile` | Apply named mix profiles (gameplay/cinematic/paused/silent) |
+
+### Navigation Tools (8 tools)
+
+| Tool | Description |
+|------|-------------|
+| `godot_navigation_list_nodes` | List navigation nodes and key settings in a scene |
+| `godot_navigation_add_region` | Add NavigationRegion2D/3D nodes with baseline properties |
+| `godot_navigation_add_agent` | Add NavigationAgent2D/3D nodes with baseline properties |
+| `godot_navigation_add_link` | Add NavigationLink2D/3D nodes with start/end positions |
+| `godot_navigation_configure_region` | Update region properties (layers, costs, enabled) |
+| `godot_navigation_configure_agent` | Update agent movement and avoidance properties |
+| `godot_navigation_build_bake_plan` | Build bake readiness checklist from scene navigation setup |
+| `godot_navigation_validate_paths` | Validate layers, links, and agent-region compatibility |
+
 ### Procedural Generation Tools (3 tools)
 
 | Tool | Description |
@@ -164,9 +235,9 @@ Options:
 | `godot_help` | **Start here** - Get guidance on which tool to use |
 | `godot_get_class_docs` | Get full documentation for any Godot class |
 | `godot_search_docs` | Search documentation by keyword |
-| `godot_list_documented_classes` | List all 200+ documented classes by category |
+| `godot_list_documented_classes` | List all documented classes by category |
 
-### Editor Tools (17 tools - Requires Plugin)
+### Editor Tools (18 tools - Requires Plugin)
 
 | Tool | Description |
 |------|-------------|
@@ -262,6 +333,7 @@ The plugin responds to these JSON-RPC methods:
 | `info.errors` | Get runtime errors |
 | `info.output` | Get console output |
 | `info.log_file` | Read Godot's log file |
+| `execute.gdscript` | Execute GDScript in the editor context |
 | `fs.refresh` | Refresh the filesystem |
 
 ---
