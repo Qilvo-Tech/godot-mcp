@@ -2,6 +2,7 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { ToolHandler, ServerState } from "../index.js";
+import { resolveProjectPath } from "../utils/path-utils.js";
 
 // Color schema
 const ColorSchema = z.object({
@@ -95,11 +96,7 @@ export function registerUIThemeTools(
         finalStyleboxes
       );
 
-      // Resolve path
-      let outputPath = themePath;
-      if (themePath.startsWith("res://") && state.projectPath) {
-        outputPath = path.join(state.projectPath, themePath.replace("res://", ""));
-      }
+      const outputPath = resolveProjectPath(themePath, state.projectPath);
 
       // Ensure directory exists
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
@@ -162,10 +159,7 @@ export function registerUIThemeTools(
         shadow_size
       );
 
-      let outputPath = boxPath;
-      if (boxPath.startsWith("res://") && state.projectPath) {
-        outputPath = path.join(state.projectPath, boxPath.replace("res://", ""));
-      }
+      const outputPath = resolveProjectPath(boxPath, state.projectPath);
 
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await fs.writeFile(outputPath, content, "utf-8");

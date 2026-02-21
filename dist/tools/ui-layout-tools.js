@@ -1,6 +1,7 @@
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { resolveProjectPath } from "../utils/path-utils.js";
 // Anchor presets matching Godot's built-in presets
 const ANCHOR_PRESETS = {
     top_left: { preset: 0, anchor_left: 0, anchor_top: 0, anchor_right: 0, anchor_bottom: 0 },
@@ -151,10 +152,7 @@ export function registerUILayoutTools(tools, state) {
         handler: async (args) => {
             const { path: scenePath, layout_type, theme_path, options } = args;
             const content = generateLayoutScene(layout_type, theme_path, options || {});
-            let outputPath = scenePath;
-            if (scenePath.startsWith("res://") && state.projectPath) {
-                outputPath = path.join(state.projectPath, scenePath.replace("res://", ""));
-            }
+            const outputPath = resolveProjectPath(scenePath, state.projectPath);
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             await fs.writeFile(outputPath, content, "utf-8");
             return {
@@ -198,13 +196,13 @@ export function registerUILayoutTools(tools, state) {
             if (config.anchor_bottom !== 0)
                 tscnProperties += `anchor_bottom = ${config.anchor_bottom}\n`;
             if (margins) {
-                if (margins.left)
+                if (margins.left !== undefined)
                     tscnProperties += `offset_left = ${margins.left}\n`;
-                if (margins.top)
+                if (margins.top !== undefined)
                     tscnProperties += `offset_top = ${margins.top}\n`;
-                if (margins.right)
+                if (margins.right !== undefined)
                     tscnProperties += `offset_right = ${margins.right}\n`;
-                if (margins.bottom)
+                if (margins.bottom !== undefined)
                     tscnProperties += `offset_bottom = ${margins.bottom}\n`;
             }
             return {
@@ -241,10 +239,7 @@ export function registerUILayoutTools(tools, state) {
         handler: async (args) => {
             const { path: scenePath, container_type, anchor_preset, properties, theme_path } = args;
             const content = generateContainerScene(container_type, anchor_preset || "full_rect", properties || {}, theme_path);
-            let outputPath = scenePath;
-            if (scenePath.startsWith("res://") && state.projectPath) {
-                outputPath = path.join(state.projectPath, scenePath.replace("res://", ""));
-            }
+            const outputPath = resolveProjectPath(scenePath, state.projectPath);
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             await fs.writeFile(outputPath, content, "utf-8");
             return {

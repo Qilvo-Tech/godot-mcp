@@ -6,6 +6,11 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { ToolHandler, ServerState } from "../index.js";
+import {
+  getProjectRelativePath,
+  resolveProjectDirectory,
+  resolveProjectPath,
+} from "../utils/path-utils.js";
 
 interface ScriptMetadata {
   className?: string;
@@ -31,7 +36,7 @@ export function registerScriptTools(
     }),
     handler: async (args) => {
       const { path: scriptPath } = args as { path: string };
-      const fullPath = resolvePath(scriptPath, state.projectPath);
+      const fullPath = resolveProjectPath(scriptPath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const metadata = parseGDScript(content);
@@ -58,7 +63,7 @@ export function registerScriptTools(
         path: string;
         content: string;
       };
-      const fullPath = resolvePath(scriptPath, state.projectPath);
+      const fullPath = resolveProjectPath(scriptPath, state.projectPath);
 
       // Ensure directory exists
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
@@ -84,7 +89,7 @@ export function registerScriptTools(
     }),
     handler: async (args) => {
       const { path: scriptPath } = args as { path: string };
-      const fullPath = resolvePath(scriptPath, state.projectPath);
+      const fullPath = resolveProjectPath(scriptPath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const metadata = parseGDScript(content);
@@ -153,9 +158,7 @@ export function registerScriptTools(
     }),
     handler: async (args) => {
       const { directory } = args as { directory?: string };
-      const searchPath = directory
-        ? path.join(state.projectPath || ".", directory)
-        : state.projectPath || ".";
+      const searchPath = resolveProjectDirectory(directory, state.projectPath);
 
       const scripts = await findFiles(searchPath, ".gd");
 
@@ -166,8 +169,8 @@ export function registerScriptTools(
             const content = await fs.readFile(scriptPath, "utf-8");
             const metadata = parseGDScript(content);
             return {
-              path: path.relative(state.projectPath || ".", scriptPath),
-              resPath: `res://${path.relative(state.projectPath || ".", scriptPath)}`,
+              path: getProjectRelativePath(scriptPath, state.projectPath),
+              resPath: `res://${getProjectRelativePath(scriptPath, state.projectPath)}`,
               className: metadata.className,
               extends: metadata.extends,
               functionCount: metadata.functions.length,
@@ -175,8 +178,8 @@ export function registerScriptTools(
             };
           } catch {
             return {
-              path: path.relative(state.projectPath || ".", scriptPath),
-              resPath: `res://${path.relative(state.projectPath || ".", scriptPath)}`,
+              path: getProjectRelativePath(scriptPath, state.projectPath),
+              resPath: `res://${getProjectRelativePath(scriptPath, state.projectPath)}`,
               error: "Could not parse",
             };
           }
@@ -210,7 +213,7 @@ export function registerScriptTools(
       if (directContent) {
         content = directContent;
       } else if (scriptPath) {
-        const fullPath = resolvePath(scriptPath, state.projectPath);
+        const fullPath = resolveProjectPath(scriptPath, state.projectPath);
         content = await fs.readFile(fullPath, "utf-8");
       } else {
         throw new Error("Either path or content must be provided");
@@ -646,19 +649,6 @@ function generateScript(
   }
 
   return lines.join("\n");
-}
-
-// Helper functions
-function resolvePath(inputPath: string, projectPath: string | null): string {
-  if (inputPath.startsWith("res://")) {
-    inputPath = inputPath.slice(6);
-  }
-
-  if (path.isAbsolute(inputPath)) {
-    return inputPath;
-  }
-
-  return path.join(projectPath || ".", inputPath);
 }
 
 async function findFiles(dir: string, extension: string): Promise<string[]> {

@@ -6,6 +6,11 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { ToolHandler, ServerState } from "../index.js";
+import {
+  getProjectRelativePath,
+  resolveProjectDirectory,
+  resolveProjectPath,
+} from "../utils/path-utils.js";
 
 interface ShaderMetadata {
   type: string;
@@ -33,7 +38,7 @@ export function registerShaderTools(
     }),
     handler: async (args) => {
       const { path: shaderPath } = args as { path: string };
-      const fullPath = resolvePath(shaderPath, state.projectPath);
+      const fullPath = resolveProjectPath(shaderPath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const metadata = parseShader(content);
@@ -60,7 +65,7 @@ export function registerShaderTools(
         path: string;
         content: string;
       };
-      const fullPath = resolvePath(shaderPath, state.projectPath);
+      const fullPath = resolveProjectPath(shaderPath, state.projectPath);
 
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content, "utf-8");
@@ -132,9 +137,7 @@ export function registerShaderTools(
     }),
     handler: async (args) => {
       const { directory } = args as { directory?: string };
-      const searchPath = directory
-        ? path.join(state.projectPath || ".", directory)
-        : state.projectPath || ".";
+      const searchPath = resolveProjectDirectory(directory, state.projectPath);
 
       const shaders = await findFiles(searchPath, ".gdshader");
 
@@ -144,14 +147,14 @@ export function registerShaderTools(
             const content = await fs.readFile(shaderPath, "utf-8");
             const metadata = parseShader(content);
             return {
-              path: path.relative(state.projectPath || ".", shaderPath),
-              resPath: `res://${path.relative(state.projectPath || ".", shaderPath)}`,
+              path: getProjectRelativePath(shaderPath, state.projectPath),
+              resPath: `res://${getProjectRelativePath(shaderPath, state.projectPath)}`,
               type: metadata.type,
               uniformCount: metadata.uniforms.length,
             };
           } catch {
             return {
-              path: path.relative(state.projectPath || ".", shaderPath),
+              path: getProjectRelativePath(shaderPath, state.projectPath),
               error: "Could not parse",
             };
           }
@@ -479,17 +482,6 @@ void fragment() {
   };
 
   return templates[effect] || templates["flash"];
-}
-
-// Helper functions
-function resolvePath(inputPath: string, projectPath: string | null): string {
-  if (inputPath.startsWith("res://")) {
-    inputPath = inputPath.slice(6);
-  }
-  if (path.isAbsolute(inputPath)) {
-    return inputPath;
-  }
-  return path.join(projectPath || ".", inputPath);
 }
 
 async function findFiles(dir: string, extension: string): Promise<string[]> {

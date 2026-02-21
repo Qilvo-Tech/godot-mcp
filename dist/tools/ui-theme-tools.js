@@ -1,6 +1,7 @@
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { resolveProjectPath } from "../utils/path-utils.js";
 // Color schema
 const ColorSchema = z.object({
     r: z.number().min(0).max(1).describe("Red component (0-1)"),
@@ -64,11 +65,7 @@ export function registerUIThemeTools(tools, state) {
             const finalStyleboxes = { ...presetStyleboxes, ...styleboxes };
             // Generate .tres content
             const themeContent = generateThemeFile(name || "UITheme", finalColors, font_size || 16, finalStyleboxes);
-            // Resolve path
-            let outputPath = themePath;
-            if (themePath.startsWith("res://") && state.projectPath) {
-                outputPath = path.join(state.projectPath, themePath.replace("res://", ""));
-            }
+            const outputPath = resolveProjectPath(themePath, state.projectPath);
             // Ensure directory exists
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             // Write theme file
@@ -98,10 +95,7 @@ export function registerUIThemeTools(tools, state) {
         handler: async (args) => {
             const { path: boxPath, bg_color, border_color, border_width, corner_radius, content_margins, shadow_color, shadow_size, } = args;
             const content = generateStyleBoxFlat(bg_color, border_color, border_width, corner_radius, content_margins, shadow_color, shadow_size);
-            let outputPath = boxPath;
-            if (boxPath.startsWith("res://") && state.projectPath) {
-                outputPath = path.join(state.projectPath, boxPath.replace("res://", ""));
-            }
+            const outputPath = resolveProjectPath(boxPath, state.projectPath);
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             await fs.writeFile(outputPath, content, "utf-8");
             return {

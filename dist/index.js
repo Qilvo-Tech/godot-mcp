@@ -14,6 +14,11 @@ import { registerDocsTools } from "./tools/docs-tools.js";
 import { registerUIThemeTools } from "./tools/ui-theme-tools.js";
 import { registerUIComponentTools } from "./tools/ui-component-tools.js";
 import { registerUILayoutTools } from "./tools/ui-layout-tools.js";
+import { registerAnimationTools } from "./tools/animation-tools.js";
+import { registerInputTools } from "./tools/input-tools.js";
+import { registerAudioTools } from "./tools/audio-tools.js";
+import { registerNavigationTools } from "./tools/navigation-tools.js";
+import { isMutatingToolName, requiresEditorBridgeConnection, usesEditorBridgeTool, } from "./utils/tool-metadata.js";
 const tools = new Map();
 const resources = new Map();
 const state = {
@@ -39,15 +44,19 @@ registerScriptTools(tools, state);
 registerEditorTools(tools, state);
 registerShaderTools(tools, state);
 registerResourceTools(tools, state);
-registerDocsTools(tools, state);
+registerAnimationTools(tools, state);
+registerInputTools(tools, state);
+registerAudioTools(tools, state);
+registerNavigationTools(tools, state);
 registerUIThemeTools(tools, state);
 registerUIComponentTools(tools, state);
 registerUILayoutTools(tools, state);
+registerDocsTools(tools, state);
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => {
     const toolList = Array.from(tools.entries()).map(([name, tool]) => ({
         name,
-        description: tool.description,
+        description: formatToolDescription(name, tool.description),
         inputSchema: tool.inputSchema instanceof z.ZodObject
             ? zodToJsonSchema(tool.inputSchema)
             : { type: "object", properties: {} },
@@ -131,9 +140,28 @@ function zodToJsonSchema(schema) {
     };
 }
 function zodTypeToJsonSchema(zodType) {
+    // Handle default wrappers
+    if (zodType instanceof z.ZodDefault) {
+        const innerSchema = zodTypeToJsonSchema(zodType.removeDefault());
+        return {
+            ...innerSchema,
+            default: zodType._def.defaultValue(),
+        };
+    }
+    // Handle effect wrappers (refine/transform)
+    if (zodType instanceof z.ZodEffects) {
+        return zodTypeToJsonSchema(zodType.innerType());
+    }
     // Handle optional types
     if (zodType instanceof z.ZodOptional) {
         return zodTypeToJsonSchema(zodType.unwrap());
+    }
+    // Handle nullable types
+    if (zodType instanceof z.ZodNullable) {
+        return {
+            anyOf: [zodTypeToJsonSchema(zodType.unwrap()), { type: "null" }],
+            description: zodType.description,
+        };
     }
     // Handle string
     if (zodType instanceof z.ZodString) {
@@ -167,6 +195,32 @@ function zodTypeToJsonSchema(zodType) {
             description: zodType.description,
         };
     }
+    // Handle literal values
+    if (zodType instanceof z.ZodLiteral) {
+        const value = zodType.value;
+        return {
+            type: typeof value,
+            enum: [value],
+            description: zodType.description,
+        };
+    }
+    // Handle unions
+    if (zodType instanceof z.ZodUnion) {
+        return {
+            anyOf: zodType.options.map((option) => zodTypeToJsonSchema(option)),
+            description: zodType.description,
+        };
+    }
+    // Handle tuple
+    if (zodType instanceof z.ZodTuple) {
+        return {
+            type: "array",
+            prefixItems: zodType.items.map((item) => zodTypeToJsonSchema(item)),
+            minItems: zodType.items.length,
+            maxItems: zodType.items.length,
+            description: zodType.description,
+        };
+    }
     // Handle record (dictionary/map)
     if (zodType instanceof z.ZodRecord) {
         return {
@@ -175,8 +229,29 @@ function zodTypeToJsonSchema(zodType) {
             description: zodType.description,
         };
     }
+    // Handle any/unknown
+    if (zodType instanceof z.ZodAny || zodType instanceof z.ZodUnknown) {
+        return {
+            description: zodType.description,
+        };
+    }
     // Default
     return { type: "string" };
+}
+function formatToolDescription(name, description) {
+    const isReadOnly = !isMutatingToolName(name);
+    const requiresEditorConnection = requiresEditorBridgeConnection(name);
+    const notes = [];
+    notes.push(`Purpose: ${description}`);
+    notes.push(`Operation: ${isReadOnly ? "Read-only" : "May modify files or editor state"}`);
+    if (requiresEditorConnection) {
+        notes.push("Prerequisite: Requires an active Godot AI Bridge connection (`godot_connect`).");
+    }
+    if (!usesEditorBridgeTool(name)) {
+        notes.push("Path scope: File operations are restricted to the configured project root.");
+    }
+    notes.push("Behavior: Inputs are schema-validated before execution.");
+    return notes.join("\n");
 }
 // Main entry point
 async function main() {

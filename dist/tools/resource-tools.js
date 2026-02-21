@@ -4,6 +4,7 @@
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { getProjectRelativePath, resolveProjectDirectory, resolveProjectPath, } from "../utils/path-utils.js";
 export function registerResourceTools(tools, state) {
     // Read a resource file
     tools.set("godot_read_resource", {
@@ -13,7 +14,7 @@ export function registerResourceTools(tools, state) {
         }),
         handler: async (args) => {
             const { path: resPath } = args;
-            const fullPath = resolvePath(resPath, state.projectPath);
+            const fullPath = resolveProjectPath(resPath, state.projectPath);
             const content = await fs.readFile(fullPath, "utf-8");
             const parsed = parseTres(content);
             return {
@@ -43,7 +44,7 @@ export function registerResourceTools(tools, state) {
         }),
         handler: async (args) => {
             const { path: resPath, resourceType, scriptPath, scriptClass, properties } = args;
-            const fullPath = resolvePath(resPath, state.projectPath);
+            const fullPath = resolveProjectPath(resPath, state.projectPath);
             const content = serializeTres(resourceType, scriptPath, scriptClass, properties);
             await fs.mkdir(path.dirname(fullPath), { recursive: true });
             await fs.writeFile(fullPath, content, "utf-8");
@@ -66,9 +67,7 @@ export function registerResourceTools(tools, state) {
         }),
         handler: async (args) => {
             const { directory, resourceType } = args;
-            const searchPath = directory
-                ? path.join(state.projectPath || ".", directory)
-                : state.projectPath || ".";
+            const searchPath = resolveProjectDirectory(directory, state.projectPath);
             const resources = await findFiles(searchPath, ".tres");
             const resourceInfos = await Promise.all(resources.map(async (resPath) => {
                 try {
@@ -79,8 +78,8 @@ export function registerResourceTools(tools, state) {
                         return null;
                     }
                     return {
-                        path: path.relative(state.projectPath || ".", resPath),
-                        resPath: `res://${path.relative(state.projectPath || ".", resPath)}`,
+                        path: getProjectRelativePath(resPath, state.projectPath),
+                        resPath: `res://${getProjectRelativePath(resPath, state.projectPath)}`,
                         type,
                     };
                 }
@@ -127,7 +126,7 @@ export function registerResourceTools(tools, state) {
             const rooms = generateRooms(roomCount, roomMinSize, roomMaxSize, gridWidth, gridHeight, rng);
             const corridors = connectRooms(rooms, rng);
             const scene = generateDungeonScene(rooms, corridors, tileSize);
-            const fullPath = resolvePath(outputPath, state.projectPath);
+            const fullPath = resolveProjectPath(outputPath, state.projectPath);
             await fs.mkdir(path.dirname(fullPath), { recursive: true });
             await fs.writeFile(fullPath, scene, "utf-8");
             return {
@@ -611,16 +610,6 @@ function generateWaves(waveCount, startingDifficulty, difficultyScale, enemyType
         waves.push({ wave: w, budget, enemies });
     }
     return waves;
-}
-// Helper functions
-function resolvePath(inputPath, projectPath) {
-    if (inputPath.startsWith("res://")) {
-        inputPath = inputPath.slice(6);
-    }
-    if (path.isAbsolute(inputPath)) {
-        return inputPath;
-    }
-    return path.join(projectPath || ".", inputPath);
 }
 async function findFiles(dir, extension) {
     const results = [];

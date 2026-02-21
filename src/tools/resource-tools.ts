@@ -6,6 +6,11 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { ToolHandler, ServerState } from "../index.js";
+import {
+  getProjectRelativePath,
+  resolveProjectDirectory,
+  resolveProjectPath,
+} from "../utils/path-utils.js";
 
 export function registerResourceTools(
   tools: Map<string, ToolHandler>,
@@ -20,7 +25,7 @@ export function registerResourceTools(
     }),
     handler: async (args) => {
       const { path: resPath } = args as { path: string };
-      const fullPath = resolvePath(resPath, state.projectPath);
+      const fullPath = resolveProjectPath(resPath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const parsed = parseTres(content);
@@ -61,7 +66,7 @@ export function registerResourceTools(
           scriptClass?: string;
           properties: Record<string, unknown>;
         };
-      const fullPath = resolvePath(resPath, state.projectPath);
+      const fullPath = resolveProjectPath(resPath, state.projectPath);
 
       const content = serializeTres(resourceType, scriptPath, scriptClass, properties);
 
@@ -91,9 +96,7 @@ export function registerResourceTools(
         directory?: string;
         resourceType?: string;
       };
-      const searchPath = directory
-        ? path.join(state.projectPath || ".", directory)
-        : state.projectPath || ".";
+      const searchPath = resolveProjectDirectory(directory, state.projectPath);
 
       const resources = await findFiles(searchPath, ".tres");
 
@@ -109,8 +112,8 @@ export function registerResourceTools(
             }
 
             return {
-              path: path.relative(state.projectPath || ".", resPath),
-              resPath: `res://${path.relative(state.projectPath || ".", resPath)}`,
+              path: getProjectRelativePath(resPath, state.projectPath),
+              resPath: `res://${getProjectRelativePath(resPath, state.projectPath)}`,
               type,
             };
           } catch {
@@ -188,7 +191,7 @@ export function registerResourceTools(
       const corridors = connectRooms(rooms, rng);
 
       const scene = generateDungeonScene(rooms, corridors, tileSize);
-      const fullPath = resolvePath(outputPath, state.projectPath);
+      const fullPath = resolveProjectPath(outputPath, state.projectPath);
 
       await fs.mkdir(path.dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, scene, "utf-8");
@@ -829,17 +832,6 @@ function generateWaves(
   }
 
   return waves;
-}
-
-// Helper functions
-function resolvePath(inputPath: string, projectPath: string | null): string {
-  if (inputPath.startsWith("res://")) {
-    inputPath = inputPath.slice(6);
-  }
-  if (path.isAbsolute(inputPath)) {
-    return inputPath;
-  }
-  return path.join(projectPath || ".", inputPath);
 }
 
 async function findFiles(dir: string, extension: string): Promise<string[]> {

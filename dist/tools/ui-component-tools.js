@@ -1,12 +1,78 @@
 import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { resolveProjectPath } from "../utils/path-utils.js";
 // Button definition schema
 const ButtonSchema = z.object({
     text: z.string().describe("Button label text"),
     name: z.string().optional().describe("Node name (defaults to sanitized text)"),
     signal: z.string().optional().describe("Signal name to emit on press"),
 });
+function toScriptPath(scenePath) {
+    if (!scenePath.endsWith(".tscn")) {
+        throw new Error("Scene path must end with .tscn");
+    }
+    return `${scenePath.slice(0, -5)}.gd`;
+}
+function escapeTscnString(value) {
+    return value
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\r/g, "")
+        .replace(/\n/g, "\\n");
+}
+function sanitizeIdentifier(value, fallback) {
+    let identifier = value
+        .toLowerCase()
+        .replace(/[^a-z0-9_]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+    if (!identifier) {
+        identifier = fallback;
+    }
+    if (/^\d/.test(identifier)) {
+        identifier = `_${identifier}`;
+    }
+    return identifier;
+}
+function sanitizeNodeName(value, fallback) {
+    let nodeName = value.replace(/[^a-zA-Z0-9_]+/g, "");
+    if (!nodeName) {
+        nodeName = fallback;
+    }
+    if (/^\d/.test(nodeName)) {
+        nodeName = `N${nodeName}`;
+    }
+    return nodeName;
+}
+function createUniqueName(baseName, usedNames) {
+    let candidate = baseName;
+    let suffix = 2;
+    while (usedNames.has(candidate)) {
+        candidate = `${baseName}_${suffix}`;
+        suffix++;
+    }
+    usedNames.add(candidate);
+    return candidate;
+}
+function normalizeButtons(buttons) {
+    const usedNodeNames = new Set();
+    const usedSignals = new Set();
+    const usedHandlers = new Set();
+    return buttons.map((button, index) => {
+        const baseNodeName = sanitizeNodeName(button.name || button.text, `Button${index + 1}`);
+        const nodeName = createUniqueName(baseNodeName, usedNodeNames);
+        const baseSignalName = sanitizeIdentifier(button.signal || `${button.text}_pressed`, `button_${index + 1}_pressed`);
+        const signalName = createUniqueName(baseSignalName, usedSignals);
+        const baseHandlerName = `_on_${sanitizeIdentifier(button.name || button.text, `button_${index + 1}`)}_pressed`;
+        const handlerName = createUniqueName(baseHandlerName, usedHandlers);
+        return {
+            text: button.text,
+            nodeName,
+            signalName,
+            handlerName,
+        };
+    });
+}
 export function registerUIComponentTools(tools, state) {
     // Create a menu scene
     tools.set("godot_ui_create_menu", {
@@ -25,23 +91,20 @@ export function registerUIComponentTools(tools, state) {
         }),
         handler: async (args) => {
             const { path: scenePath, title, buttons, theme_path, background_color, centered, button_min_width, spacing, } = args;
-            // Calculate script path (res:// relative)
-            const gdScriptPath = scenePath.replace(".tscn", ".gd");
-            const content = generateMenuScene(title, buttons, theme_path, background_color, centered ?? true, button_min_width ?? 200, spacing ?? 10, gdScriptPath);
-            let outputPath = scenePath;
-            if (scenePath.startsWith("res://") && state.projectPath) {
-                outputPath = path.join(state.projectPath, scenePath.replace("res://", ""));
-            }
+            const normalizedButtons = normalizeButtons(buttons);
+            const gdScriptPath = toScriptPath(scenePath);
+            const content = generateMenuScene(title, normalizedButtons, theme_path, background_color, centered ?? true, button_min_width ?? 200, spacing ?? 10, gdScriptPath);
+            const outputPath = resolveProjectPath(scenePath, state.projectPath);
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             await fs.writeFile(outputPath, content, "utf-8");
             // Generate accompanying script
             const scriptPath = outputPath.replace(".tscn", ".gd");
-            const scriptContent = generateMenuScript(buttons, centered ?? true);
+            const scriptContent = generateMenuScript(normalizedButtons, centered ?? true);
             await fs.writeFile(scriptPath, scriptContent, "utf-8");
             return {
                 success: true,
                 scene_path: scenePath,
-                script_path: scenePath.replace(".tscn", ".gd"),
+                script_path: gdScriptPath,
                 message: `Created menu scene at ${scenePath}`,
                 buttons: buttons.map(b => b.text),
             };
@@ -61,13 +124,9 @@ export function registerUIComponentTools(tools, state) {
         }),
         handler: async (args) => {
             const { path: scenePath, elements, layout, theme_path } = args;
-            // Calculate script path (res:// relative)
-            const gdScriptPath = scenePath.replace(".tscn", ".gd");
+            const gdScriptPath = toScriptPath(scenePath);
             const content = generateHUDScene(elements, layout || "top_bar", theme_path, gdScriptPath);
-            let outputPath = scenePath;
-            if (scenePath.startsWith("res://") && state.projectPath) {
-                outputPath = path.join(state.projectPath, scenePath.replace("res://", ""));
-            }
+            const outputPath = resolveProjectPath(scenePath, state.projectPath);
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             await fs.writeFile(outputPath, content, "utf-8");
             // Generate script
@@ -77,7 +136,7 @@ export function registerUIComponentTools(tools, state) {
             return {
                 success: true,
                 scene_path: scenePath,
-                script_path: scenePath.replace(".tscn", ".gd"),
+                script_path: gdScriptPath,
                 message: `Created HUD scene at ${scenePath}`,
                 elements,
                 layout: layout || "top_bar",
@@ -100,35 +159,27 @@ export function registerUIComponentTools(tools, state) {
         handler: async (args) => {
             const { path: scenePath, title, message, buttons, dialog_type, theme_path, width } = args;
             // Default buttons based on dialog type
-            let dialogButtons = buttons;
-            if (!dialogButtons) {
-                if (dialog_type === "confirm") {
-                    dialogButtons = [
+            const dialogButtons = buttons ??
+                (dialog_type === "confirm"
+                    ? [
                         { text: "Cancel", signal: "cancelled" },
                         { text: "OK", signal: "confirmed" },
-                    ];
-                }
-                else {
-                    dialogButtons = [{ text: "OK", signal: "confirmed" }];
-                }
-            }
-            // Calculate script path (res:// relative)
-            const gdScriptPath = scenePath.replace(".tscn", ".gd");
-            const content = generateDialogScene(title, message, dialogButtons, theme_path, width ?? 400, gdScriptPath);
-            let outputPath = scenePath;
-            if (scenePath.startsWith("res://") && state.projectPath) {
-                outputPath = path.join(state.projectPath, scenePath.replace("res://", ""));
-            }
+                    ]
+                    : [{ text: "OK", signal: "confirmed" }]);
+            const normalizedButtons = normalizeButtons(dialogButtons);
+            const gdScriptPath = toScriptPath(scenePath);
+            const content = generateDialogScene(title, message, normalizedButtons, theme_path, width ?? 400, gdScriptPath);
+            const outputPath = resolveProjectPath(scenePath, state.projectPath);
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             await fs.writeFile(outputPath, content, "utf-8");
             // Generate script
             const scriptPath = outputPath.replace(".tscn", ".gd");
-            const scriptContent = generateDialogScript(dialogButtons);
+            const scriptContent = generateDialogScript(normalizedButtons);
             await fs.writeFile(scriptPath, scriptContent, "utf-8");
             return {
                 success: true,
                 scene_path: scenePath,
-                script_path: scenePath.replace(".tscn", ".gd"),
+                script_path: gdScriptPath,
                 message: `Created dialog scene at ${scenePath}`,
             };
         },
@@ -152,10 +203,7 @@ export function registerUIComponentTools(tools, state) {
         handler: async (args) => {
             const { path: scenePath, title, size, position, theme_path, content_type } = args;
             const content = generatePanelScene(title, size, position || "center", theme_path, content_type || "vbox");
-            let outputPath = scenePath;
-            if (scenePath.startsWith("res://") && state.projectPath) {
-                outputPath = path.join(state.projectPath, scenePath.replace("res://", ""));
-            }
+            const outputPath = resolveProjectPath(scenePath, state.projectPath);
             await fs.mkdir(path.dirname(outputPath), { recursive: true });
             await fs.writeFile(outputPath, content, "utf-8");
             return {
@@ -173,13 +221,13 @@ function generateMenuScene(title, buttons, themePath, bgColor, centered = true, 
     // Add theme resource if provided
     if (themePath) {
         extResourceCount++;
-        extResources += `[ext_resource type="Theme" path="${themePath}" id="theme_${extResourceCount}"]\n`;
+        extResources += `[ext_resource type="Theme" path="${escapeTscnString(themePath)}" id="theme_${extResourceCount}"]\n`;
     }
     // Add script reference
     extResourceCount++;
     const scriptId = `script_${extResourceCount}`;
     const resolvedScriptPath = scriptPath || "menu.gd";
-    extResources += `[ext_resource type="Script" path="${resolvedScriptPath}" id="${scriptId}"]\n`;
+    extResources += `[ext_resource type="Script" path="${escapeTscnString(resolvedScriptPath)}" id="${scriptId}"]\n`;
     let content = `[gd_scene load_steps=${extResourceCount + 1} format=3]\n\n`;
     content += extResources;
     content += `\n`;
@@ -223,7 +271,7 @@ function generateMenuScene(title, buttons, themePath, bgColor, centered = true, 
     // Title
     content += `[node name="Title" type="Label" parent="${parentPath}"]\n`;
     content += `layout_mode = 2\n`;
-    content += `text = "${title}"\n`;
+    content += `text = "${escapeTscnString(title)}"\n`;
     content += `horizontal_alignment = 1\n\n`;
     // Spacer
     content += `[node name="Spacer" type="Control" parent="${parentPath}"]\n`;
@@ -231,11 +279,10 @@ function generateMenuScene(title, buttons, themePath, bgColor, centered = true, 
     content += `custom_minimum_size = Vector2(0, 20)\n\n`;
     // Buttons
     for (const button of buttons) {
-        const nodeName = button.name || button.text.replace(/[^a-zA-Z0-9]/g, "");
-        content += `[node name="${nodeName}Button" type="Button" parent="${parentPath}"]\n`;
+        content += `[node name="${button.nodeName}Button" type="Button" parent="${parentPath}"]\n`;
         content += `layout_mode = 2\n`;
         content += `custom_minimum_size = Vector2(${buttonMinWidth}, 0)\n`;
-        content += `text = "${button.text}"\n\n`;
+        content += `text = "${escapeTscnString(button.text)}"\n\n`;
     }
     return content;
 }
@@ -244,24 +291,20 @@ function generateMenuScript(buttons, centered = true) {
     let script = `extends Control\n\n`;
     // Signals
     for (const button of buttons) {
-        const signalName = button.signal || `${button.text.toLowerCase().replace(/[^a-z0-9]/g, "_")}_pressed`;
-        script += `signal ${signalName}\n`;
+        script += `signal ${button.signalName}\n`;
     }
     script += `\n`;
     const basePath = centered ? "CenterContainer/VBoxContainer" : "VBoxContainer";
     // Ready function
     script += `func _ready() -> void:\n`;
     for (const button of buttons) {
-        const nodeName = button.name || button.text.replace(/[^a-zA-Z0-9]/g, "");
-        script += `\t$${basePath}/${nodeName}Button.pressed.connect(_on_${nodeName.toLowerCase()}_pressed)\n`;
+        script += `\t$${basePath}/${button.nodeName}Button.pressed.connect(${button.handlerName})\n`;
     }
     script += `\n`;
     // Button handlers
     for (const button of buttons) {
-        const nodeName = button.name || button.text.replace(/[^a-zA-Z0-9]/g, "");
-        const signalName = button.signal || `${button.text.toLowerCase().replace(/[^a-z0-9]/g, "_")}_pressed`;
-        script += `func _on_${nodeName.toLowerCase()}_pressed() -> void:\n`;
-        script += `\t${signalName}.emit()\n\n`;
+        script += `func ${button.handlerName}() -> void:\n`;
+        script += `\t${button.signalName}.emit()\n\n`;
     }
     return script;
 }
@@ -271,12 +314,12 @@ function generateHUDScene(elements, layout, themePath, scriptPath) {
     let extResources = "";
     if (themePath) {
         extResourceCount++;
-        extResources += `[ext_resource type="Theme" path="${themePath}" id="theme_${extResourceCount}"]\n`;
+        extResources += `[ext_resource type="Theme" path="${escapeTscnString(themePath)}" id="theme_${extResourceCount}"]\n`;
     }
     extResourceCount++;
     const scriptId = `script_${extResourceCount}`;
     const resolvedScriptPath = scriptPath || "hud.gd";
-    extResources += `[ext_resource type="Script" path="${resolvedScriptPath}" id="${scriptId}"]\n`;
+    extResources += `[ext_resource type="Script" path="${escapeTscnString(resolvedScriptPath)}" id="${scriptId}"]\n`;
     let content = `[gd_scene load_steps=${extResourceCount + 1} format=3]\n\n`;
     content += extResources;
     content += `\n`;
@@ -482,12 +525,12 @@ function generateDialogScene(title, message, buttons, themePath, width = 400, sc
     let extResources = "";
     if (themePath) {
         extResourceCount++;
-        extResources += `[ext_resource type="Theme" path="${themePath}" id="theme_${extResourceCount}"]\n`;
+        extResources += `[ext_resource type="Theme" path="${escapeTscnString(themePath)}" id="theme_${extResourceCount}"]\n`;
     }
     extResourceCount++;
     const scriptId = `script_${extResourceCount}`;
     const resolvedScriptPath = scriptPath || "dialog.gd";
-    extResources += `[ext_resource type="Script" path="${resolvedScriptPath}" id="${scriptId}"]\n`;
+    extResources += `[ext_resource type="Script" path="${escapeTscnString(resolvedScriptPath)}" id="${scriptId}"]\n`;
     let content = `[gd_scene load_steps=${extResourceCount + 1} format=3]\n\n`;
     content += extResources;
     content += `\n`;
@@ -526,13 +569,13 @@ function generateDialogScene(title, message, buttons, themePath, width = 400, sc
     // Title
     content += `[node name="Title" type="Label" parent="CenterContainer/Panel/VBox"]\n`;
     content += `layout_mode = 2\n`;
-    content += `text = "${title}"\n`;
+    content += `text = "${escapeTscnString(title)}"\n`;
     content += `horizontal_alignment = 1\n\n`;
     // Message
     if (message) {
         content += `[node name="Message" type="Label" parent="CenterContainer/Panel/VBox"]\n`;
         content += `layout_mode = 2\n`;
-        content += `text = "${message}"\n`;
+        content += `text = "${escapeTscnString(message)}"\n`;
         content += `horizontal_alignment = 1\n`;
         content += `autowrap_mode = 2\n\n`;
     }
@@ -543,11 +586,10 @@ function generateDialogScene(title, message, buttons, themePath, width = 400, sc
     content += `theme_override_constants/separation = 10\n\n`;
     // Buttons
     for (const button of buttons) {
-        const nodeName = button.name || button.text.replace(/[^a-zA-Z0-9]/g, "");
-        content += `[node name="${nodeName}Button" type="Button" parent="CenterContainer/Panel/VBox/Buttons"]\n`;
+        content += `[node name="${button.nodeName}Button" type="Button" parent="CenterContainer/Panel/VBox/Buttons"]\n`;
         content += `layout_mode = 2\n`;
         content += `custom_minimum_size = Vector2(100, 0)\n`;
-        content += `text = "${button.text}"\n\n`;
+        content += `text = "${escapeTscnString(button.text)}"\n\n`;
     }
     return content;
 }
@@ -556,15 +598,13 @@ function generateDialogScript(buttons) {
     let script = `extends Control\n\n`;
     // Signals
     for (const button of buttons) {
-        const signalName = button.signal || `${button.text.toLowerCase().replace(/[^a-z0-9]/g, "_")}_pressed`;
-        script += `signal ${signalName}\n`;
+        script += `signal ${button.signalName}\n`;
     }
     script += `\n`;
     // Ready
     script += `func _ready() -> void:\n`;
     for (const button of buttons) {
-        const nodeName = button.name || button.text.replace(/[^a-zA-Z0-9]/g, "");
-        script += `\t$CenterContainer/Panel/VBox/Buttons/${nodeName}Button.pressed.connect(_on_${nodeName.toLowerCase()}_pressed)\n`;
+        script += `\t$CenterContainer/Panel/VBox/Buttons/${button.nodeName}Button.pressed.connect(${button.handlerName})\n`;
     }
     script += `\n`;
     // Show/hide functions
@@ -574,10 +614,8 @@ function generateDialogScript(buttons) {
     script += `\tvisible = false\n\n`;
     // Handlers
     for (const button of buttons) {
-        const nodeName = button.name || button.text.replace(/[^a-zA-Z0-9]/g, "");
-        const signalName = button.signal || `${button.text.toLowerCase().replace(/[^a-z0-9]/g, "_")}_pressed`;
-        script += `func _on_${nodeName.toLowerCase()}_pressed() -> void:\n`;
-        script += `\t${signalName}.emit()\n`;
+        script += `func ${button.handlerName}() -> void:\n`;
+        script += `\t${button.signalName}.emit()\n`;
         script += `\thide_dialog()\n\n`;
     }
     return script;
@@ -587,7 +625,7 @@ function generatePanelScene(title, size, position, themePath, contentType = "vbo
     const loadSteps = themePath ? 2 : 1;
     let content = `[gd_scene load_steps=${loadSteps} format=3]\n\n`;
     if (themePath) {
-        content += `[ext_resource type="Theme" path="${themePath}" id="theme_1"]\n`;
+        content += `[ext_resource type="Theme" path="${escapeTscnString(themePath)}" id="theme_1"]\n`;
     }
     content += `\n`;
     // Root panel
@@ -626,7 +664,7 @@ function generatePanelScene(title, size, position, themePath, contentType = "vbo
     if (title) {
         content += `[node name="Title" type="Label" parent="Content"]\n`;
         content += `layout_mode = 2\n`;
-        content += `text = "${title}"\n`;
+        content += `text = "${escapeTscnString(title)}"\n`;
         content += `horizontal_alignment = 1\n\n`;
     }
     return content;

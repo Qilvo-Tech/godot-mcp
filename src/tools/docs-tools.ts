@@ -6,6 +6,7 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { ToolHandler, ServerState } from "../index.js";
+import { isMutatingToolName, usesEditorBridgeTool } from "../utils/tool-metadata.js";
 
 // Godot 4.x class documentation (commonly used classes)
 const GODOT_DOCS: Record<string, ClassDoc> = {
@@ -410,7 +411,7 @@ interface ClassDoc {
 
 // Tool guide for helping select the right tool
 const TOOL_GUIDE = {
-  overview: `Godot MCP provides 60 tools across 8 categories. This guide helps you choose the right tool for your task.`,
+  overview: `Godot MCP provides 90 tools across 13 categories. This guide helps you choose the right tool for your task.`,
 
   categories: {
     scenes: {
@@ -456,13 +457,22 @@ const TOOL_GUIDE = {
       tools: {
         godot_connect: "Connect to running Godot editor",
         godot_disconnect: "Disconnect from editor",
+        godot_connection_status: "Check current bridge connection status",
         godot_editor_get_scene_tree: "Inspect the live scene tree",
+        godot_editor_select_node: "Select a node in the editor",
         godot_editor_add_node: "Add node in real-time",
         godot_editor_modify_node: "Modify node in real-time",
         godot_editor_remove_node: "Remove node in real-time",
-        godot_editor_get_selected: "Get currently selected nodes",
+        godot_editor_open_scene: "Open a scene in the editor",
+        godot_editor_save_scene: "Save current scene",
         godot_editor_run_scene: "Play the current scene",
         godot_editor_stop_scene: "Stop the running scene",
+        godot_editor_get_errors: "Retrieve current editor/runtime errors",
+        godot_editor_get_output: "Retrieve captured output lines",
+        godot_editor_get_log_file: "Read latest Godot log file lines",
+        godot_editor_execute_gdscript: "Execute GDScript inside editor context",
+        godot_editor_get_project_info: "Get project path/name/version details",
+        godot_editor_refresh_filesystem: "Trigger editor filesystem rescan",
       },
       whenToUse: [
         "Iterating quickly with visual feedback",
@@ -500,6 +510,116 @@ const TOOL_GUIDE = {
         "Creating data-driven game content",
         "Managing item databases, enemy stats",
         "Theme and style resources",
+      ],
+    },
+
+    animation: {
+      description:
+        "Create and edit animation clips plus AnimationPlayer/AnimationTree scene setup",
+      tools: {
+        godot_animation_create_clip:
+          "Create Animation resources with value tracks and keyframes",
+        godot_animation_read_clip:
+          "Read Animation resource tracks/keyframes as structured data",
+        godot_animation_add_keyframe:
+          "Add a keyframe to an existing animation track",
+        godot_animation_remove_keyframe:
+          "Remove keyframes by index or timestamp",
+        godot_animation_list_clips:
+          "List Animation resource files and metadata",
+        godot_animation_setup_scene:
+          "Add or configure AnimationPlayer and AnimationTree nodes in scenes",
+        godot_animation_build_state_machine_plan:
+          "Build state-machine configuration plans and runtime setup scripts",
+        godot_animation_build_blend_space_plan:
+          "Build blend-space configuration plans and runtime setup scripts",
+      },
+      whenToUse: [
+        "Bootstrapping animation clips from structured data",
+        "Editing keyframe timing/value data programmatically",
+        "Wiring AnimationPlayer/AnimationTree into existing scenes",
+      ],
+    },
+
+    input: {
+      description:
+        "Manage InputMap actions and bindings in project.godot (keyboard, mouse, and gamepad)",
+      tools: {
+        godot_input_list_actions:
+          "List all input actions with deadzones and binding counts",
+        godot_input_get_action:
+          "Inspect one input action and all of its bindings",
+        godot_input_set_action:
+          "Create or update an action and its bindings",
+        godot_input_remove_action:
+          "Remove an action from InputMap",
+        godot_input_list_presets:
+          "List built-in control presets",
+        godot_input_apply_preset:
+          "Apply a built-in control preset (merge or replace)",
+      },
+      whenToUse: [
+        "Setting up keyboard/mouse/gamepad controls",
+        "Standardizing control schemes across projects",
+        "Automating InputMap edits without opening editor settings",
+      ],
+    },
+
+    audio: {
+      description:
+        "Manage AudioBusLayout resources and configure AudioStreamPlayer nodes in scenes",
+      tools: {
+        godot_audio_create_bus_layout:
+          "Create or overwrite AudioBusLayout resources and optionally set project default",
+        godot_audio_read_bus_layout:
+          "Read bus layout resources into structured bus data",
+        godot_audio_set_bus:
+          "Create/update individual buses (send, volume, mute, solo, bypass)",
+        godot_audio_remove_bus:
+          "Remove buses from a layout by name",
+        godot_audio_list_players:
+          "List AudioStreamPlayer nodes and their stream/bus settings",
+        godot_audio_configure_player:
+          "Configure player stream, bus routing, volume, pitch, and autoplay",
+        godot_audio_list_effect_presets:
+          "List built-in effect-chain presets",
+        godot_audio_generate_effect_chain_script:
+          "Generate AudioServer scripts to apply preset effects on a bus",
+        godot_audio_apply_mix_profile:
+          "Apply named mix profiles (gameplay/cinematic/paused/silent)",
+      },
+      whenToUse: [
+        "Setting up bus routing (Music/SFX/VO) in a reproducible way",
+        "Applying consistent audio player settings across scenes",
+        "Automating project audio defaults for new environments",
+      ],
+    },
+
+    navigation: {
+      description:
+        "Set up navigation regions, agents, and links directly in scene files",
+      tools: {
+        godot_navigation_list_nodes:
+          "List navigation nodes and their key settings in a scene",
+        godot_navigation_add_region:
+          "Add NavigationRegion2D/3D nodes with baseline navigation properties",
+        godot_navigation_add_agent:
+          "Add NavigationAgent2D/3D nodes with baseline movement/avoidance settings",
+        godot_navigation_add_link:
+          "Add NavigationLink2D/3D nodes with start/end positions",
+        godot_navigation_configure_region:
+          "Configure region properties like layers/costs/enabled",
+        godot_navigation_configure_agent:
+          "Configure agent movement and avoidance properties",
+        godot_navigation_build_bake_plan:
+          "Generate bake checklists from region/agent/link setup",
+        godot_navigation_validate_paths:
+          "Validate layer compatibility and link/path consistency",
+      },
+      whenToUse: [
+        "Bootstrapping scene-level navigation setup",
+        "Standardizing agent parameters across multiple scenes",
+        "Automating link/region scaffolding before navmesh baking",
       ],
     },
 
@@ -557,6 +677,16 @@ const TOOL_GUIDE = {
         "Generating UI scenes with scripts",
       ],
     },
+
+    coverage: {
+      description: "Coverage matrix and roadmap for Godot subsystem support",
+      tools: {},
+      whenToUse: [
+        "Evaluating what is currently supported",
+        "Planning MCP feature expansion",
+        "Prioritizing missing high-impact tool groups",
+      ],
+    },
   },
 
   workflows: {
@@ -581,6 +711,29 @@ const TOOL_GUIDE = {
       "2. godot_write_scene - Save as scene file",
       "3. godot_generate_wave_config - Add enemy waves",
     ],
+    "Set up animations": [
+      "1. godot_animation_create_clip - Create base clips (idle/run/jump)",
+      "2. godot_animation_add_keyframe - Refine timing and values",
+      "3. godot_animation_setup_scene - Wire AnimationPlayer/AnimationTree nodes",
+      "4. godot_animation_build_state_machine_plan - Generate state machine runtime script",
+    ],
+    "Set up controls": [
+      "1. godot_input_list_presets - Inspect available presets",
+      "2. godot_input_apply_preset - Apply baseline controls",
+      "3. godot_input_set_action - Add or customize specific bindings",
+    ],
+    "Set up audio": [
+      "1. godot_audio_create_bus_layout - Create baseline bus routing",
+      "2. godot_audio_set_bus - Tune Music/SFX/VO bus levels and routing",
+      "3. godot_audio_configure_player - Attach streams and bus assignment in scenes",
+      "4. godot_audio_generate_effect_chain_script - Apply effect chain through AudioServer",
+    ],
+    "Set up navigation": [
+      "1. godot_navigation_add_region - Create navigation regions in scenes",
+      "2. godot_navigation_add_agent - Add configured navigation agents",
+      "3. godot_navigation_add_link - Add explicit link connections where needed",
+      "4. godot_navigation_validate_paths - Validate layers and link consistency before bake",
+    ],
     "Build game UI": [
       "1. godot_ui_create_theme - Create a theme (or use preset like 'game')",
       "2. godot_ui_create_menu - Create main menu with buttons",
@@ -595,8 +748,390 @@ const TOOL_GUIDE = {
     "Use godot_validate_scene/script to check for errors before running",
     "godot_analyze_script is great for understanding existing code",
     "Shader presets cover most common 2D effects - customize after generating",
+    "Use animation tools to create reusable clips before wiring AnimationTree logic",
+    "Use input tools to keep control mappings reproducible across environments",
+    "Use audio tools to standardize bus routing and player configuration across scenes",
+    "Use navigation tools to scaffold regions/agents before running navmesh baking in editor",
+    "Use generated script plans with godot_editor_execute_gdscript for live advanced setup",
   ],
 };
+
+const COVERAGE_GUIDE = {
+  levels: {
+    strong: "End-to-end workflows are supported with multiple focused tools.",
+    partial: "Useful operations exist, but major workflow gaps remain.",
+    minimal: "Only basic helpers exist; most workflow is still manual.",
+    missing: "No dedicated tooling yet.",
+  },
+  matrix: [
+    {
+      subsystem: "Scene authoring (.tscn)",
+      coverage: "strong",
+      priority: "medium",
+      tools: [
+        "godot_read_scene",
+        "godot_write_scene",
+        "godot_add_node",
+        "godot_modify_node",
+        "godot_validate_scene",
+      ],
+      gaps: [
+        "PackedScene-heavy instancing workflows",
+        "Bulk scene refactors",
+      ],
+    },
+    {
+      subsystem: "Live editor control",
+      coverage: "strong",
+      priority: "medium",
+      tools: ["godot_connect", "godot_editor_*"],
+      gaps: ["Subscription/event streaming", "Richer querying/filtering"],
+    },
+    {
+      subsystem: "GDScript workflows",
+      coverage: "strong",
+      priority: "medium",
+      tools: [
+        "godot_read_script",
+        "godot_write_script",
+        "godot_analyze_script",
+        "godot_validate_script",
+      ],
+      gaps: ["AST-grade refactors", "Project-wide symbol operations"],
+    },
+    {
+      subsystem: "UI workflows",
+      coverage: "strong",
+      priority: "medium",
+      tools: [
+        "godot_ui_create_theme",
+        "godot_ui_create_menu",
+        "godot_ui_create_hud",
+        "godot_ui_create_layout",
+      ],
+      gaps: ["Patch existing UI scenes", "Accessibility/localization checks"],
+    },
+    {
+      subsystem: "Shaders",
+      coverage: "partial",
+      priority: "medium",
+      tools: ["godot_read_shader", "godot_write_shader", "godot_generate_shader"],
+      gaps: ["Material assignment workflows", "Validation/linting"],
+    },
+    {
+      subsystem: "Resources/data",
+      coverage: "partial",
+      priority: "high",
+      tools: ["godot_read_resource", "godot_write_resource", "godot_list_resources"],
+      gaps: ["Deep typed resource editing", ".res support", "Reference integrity checks"],
+    },
+    {
+      subsystem: "Tilemap/procedural generation",
+      coverage: "partial",
+      priority: "high",
+      tools: [
+        "godot_generate_dungeon",
+        "godot_generate_tilemap_pattern",
+        "godot_generate_wave_config",
+      ],
+      gaps: ["TileSet authoring", "Navigation integration", "Runtime placement helpers"],
+    },
+    {
+      subsystem: "Animation system",
+      coverage: "partial",
+      priority: "high",
+      tools: [
+        "godot_animation_create_clip",
+        "godot_animation_read_clip",
+        "godot_animation_add_keyframe",
+        "godot_animation_remove_keyframe",
+        "godot_animation_list_clips",
+        "godot_animation_setup_scene",
+        "godot_animation_build_state_machine_plan",
+        "godot_animation_build_blend_space_plan",
+      ],
+      gaps: [
+        "Direct AnimationTree graph resource authoring",
+        "Advanced track types (method/audio/bezier) with scene-side wiring",
+      ],
+    },
+    {
+      subsystem: "Audio system",
+      coverage: "partial",
+      priority: "high",
+      tools: [
+        "godot_audio_create_bus_layout",
+        "godot_audio_read_bus_layout",
+        "godot_audio_set_bus",
+        "godot_audio_remove_bus",
+        "godot_audio_list_players",
+        "godot_audio_configure_player",
+        "godot_audio_list_effect_presets",
+        "godot_audio_generate_effect_chain_script",
+        "godot_audio_apply_mix_profile",
+      ],
+      gaps: [
+        "Direct effect-chain serialization into AudioBusLayout resources",
+        "Live runtime mixer automation hooks",
+      ],
+    },
+    {
+      subsystem: "Input map and controls",
+      coverage: "partial",
+      priority: "high",
+      tools: [
+        "godot_input_list_actions",
+        "godot_input_get_action",
+        "godot_input_set_action",
+        "godot_input_remove_action",
+        "godot_input_list_presets",
+        "godot_input_apply_preset",
+      ],
+      gaps: ["Per-platform profile overlays", "Runtime/player-specific rebind workflows"],
+    },
+    {
+      subsystem: "Navigation and AI helpers",
+      coverage: "partial",
+      priority: "high",
+      tools: [
+        "godot_navigation_list_nodes",
+        "godot_navigation_add_region",
+        "godot_navigation_add_agent",
+        "godot_navigation_add_link",
+        "godot_navigation_configure_region",
+        "godot_navigation_configure_agent",
+        "godot_navigation_build_bake_plan",
+        "godot_navigation_validate_paths",
+      ],
+      gaps: ["Editor-triggered bake execution", "Live path visualization overlays"],
+    },
+    {
+      subsystem: "Asset import pipeline",
+      coverage: "missing",
+      priority: "medium",
+      tools: [],
+      gaps: ["Import preset authoring", "Reimport controls"],
+    },
+    {
+      subsystem: "Export/deployment",
+      coverage: "missing",
+      priority: "medium",
+      tools: [],
+      gaps: ["Export preset management", "Build validation"],
+    },
+    {
+      subsystem: "Multiplayer/networking",
+      coverage: "missing",
+      priority: "low",
+      tools: [],
+      gaps: ["Replication scaffolds", "Authority/peer setup helpers"],
+    },
+  ],
+  roadmap: {
+    phase_1_highest_impact: [
+      "Input map tool refinement (profile/rebind workflows)",
+      "Audio tool refinement (direct effect serialization + runtime automation)",
+      "Navigation tool refinement (editor bake + live path visualization)",
+      "Animation tool refinement (direct graph authoring + advanced tracks)",
+    ],
+    phase_2_workflow_depth: [
+      "Typed resource editing expansion",
+      "TileSet/TileMap authoring tools",
+      "Asset import pipeline tools",
+    ],
+    phase_3_advanced_release: [
+      "Export/deployment tools",
+      "Multiplayer scaffolding",
+      "Advanced project-wide refactor/lint tools",
+    ],
+  },
+  source: "docs/COVERAGE_MATRIX.md",
+};
+
+function isMutatingTool(toolName: string): boolean {
+  return isMutatingToolName(toolName);
+}
+
+function getToolPrerequisites(toolName: string): string[] {
+  const requirements: string[] = [];
+  const usesEditorBridge = usesEditorBridgeTool(toolName);
+
+  if (usesEditorBridge) {
+    requirements.push(
+      "Godot editor running with the Godot AI Bridge plugin enabled."
+    );
+  }
+
+  if (toolName.startsWith("godot_editor_")) {
+    requirements.push("A successful `godot_connect` call in the current session.");
+  }
+
+  return requirements;
+}
+
+function unwrapSchema(schema: z.ZodTypeAny): {
+  schema: z.ZodTypeAny;
+  required: boolean;
+  nullable: boolean;
+  defaultValue?: unknown;
+} {
+  let current = schema;
+  let required = true;
+  let nullable = false;
+  let defaultValue: unknown;
+  let shouldContinue = true;
+
+  while (shouldContinue) {
+    shouldContinue = false;
+
+    if (current instanceof z.ZodDefault) {
+      required = false;
+      const defaultGetter = current._def.defaultValue;
+      defaultValue =
+        typeof defaultGetter === "function" ? defaultGetter() : defaultGetter;
+      current = current.removeDefault();
+      shouldContinue = true;
+      continue;
+    }
+
+    if (current instanceof z.ZodOptional) {
+      required = false;
+      current = current.unwrap();
+      shouldContinue = true;
+      continue;
+    }
+
+    if (current instanceof z.ZodNullable) {
+      nullable = true;
+      current = current.unwrap();
+      shouldContinue = true;
+      continue;
+    }
+
+    if (current instanceof z.ZodEffects) {
+      current = current.innerType();
+      shouldContinue = true;
+    }
+  }
+
+  return { schema: current, required, nullable, defaultValue };
+}
+
+function schemaTypeLabel(schema: z.ZodTypeAny): string {
+  if (schema instanceof z.ZodString) return "string";
+  if (schema instanceof z.ZodNumber) return "number";
+  if (schema instanceof z.ZodBoolean) return "boolean";
+  if (schema instanceof z.ZodEnum) return schema.options.join(" | ");
+  if (schema instanceof z.ZodLiteral) return JSON.stringify(schema.value);
+  if (schema instanceof z.ZodArray) return `array<${schemaTypeLabel(schema.element)}>`;
+  if (schema instanceof z.ZodRecord) return "record<string, unknown>";
+  if (schema instanceof z.ZodObject) return "object";
+  if (schema instanceof z.ZodUnion) {
+    return schema.options
+      .map((option: z.ZodTypeAny) => schemaTypeLabel(option))
+      .join(" | ");
+  }
+  if (schema instanceof z.ZodTuple) {
+    return `tuple<${schema.items
+      .map((item: z.ZodTypeAny) => schemaTypeLabel(item))
+      .join(", ")}>`;
+  }
+  return "unknown";
+}
+
+function describeToolInputs(
+  inputSchema: z.ZodType<unknown>
+): Array<Record<string, unknown>> {
+  if (!(inputSchema instanceof z.ZodObject)) {
+    return [];
+  }
+
+  const shape = inputSchema.shape;
+
+  return Object.entries(shape).map(([name, value]) => {
+    const rawSchema = value as z.ZodTypeAny;
+    const unwrapped = unwrapSchema(rawSchema);
+    const typeLabel = `${schemaTypeLabel(unwrapped.schema)}${
+      unwrapped.nullable ? " | null" : ""
+    }`;
+
+    const field: Record<string, unknown> = {
+      name,
+      type: typeLabel,
+      required: unwrapped.required,
+    };
+
+    const description = rawSchema.description || unwrapped.schema.description;
+    if (description) {
+      field.description = description;
+    }
+
+    if (unwrapped.defaultValue !== undefined) {
+      field.default = unwrapped.defaultValue;
+    }
+
+    return field;
+  });
+}
+
+function exampleValueForType(typeLabel: string): unknown {
+  if (typeLabel.startsWith("string")) return "<string>";
+  if (typeLabel.startsWith("number")) return 0;
+  if (typeLabel.startsWith("boolean")) return false;
+  if (typeLabel.startsWith("array<")) return [];
+  if (typeLabel.startsWith("tuple<")) return [];
+  if (typeLabel.startsWith("object")) return {};
+  if (typeLabel.startsWith("record<")) return {};
+  return "<value>";
+}
+
+function buildToolTemplate(toolName: string, tool: ToolHandler): Record<string, unknown> {
+  const mutating = isMutatingTool(toolName);
+  const prerequisites = getToolPrerequisites(toolName);
+  const inputs = describeToolInputs(tool.inputSchema);
+  const constraints: string[] = [];
+
+  if (!toolName.startsWith("godot_editor_") && toolName !== "godot_connect" && toolName !== "godot_disconnect" && toolName !== "godot_connection_status") {
+    constraints.push("Filesystem paths are restricted to the configured project root.");
+  }
+
+  if (toolName === "godot_editor_execute_gdscript") {
+    constraints.push("Executes arbitrary GDScript in editor context. Only run trusted code.");
+  }
+
+  if (mutating) {
+    constraints.push("May modify project files and/or live editor state.");
+  } else {
+    constraints.push("Read-only operation with no project mutation.");
+  }
+
+  const requiredInputs = inputs
+    .filter((input) => input.required === true)
+    .slice(0, 3);
+  const exampleArgs = Object.fromEntries(
+    requiredInputs.map((input) => [
+      String(input.name),
+      exampleValueForType(String(input.type || "unknown")),
+    ])
+  );
+
+  return {
+    tool: toolName,
+    purpose: tool.description,
+    operation: mutating ? "mutating" : "read_only",
+    prerequisites,
+    constraints,
+    inputs,
+    output: {
+      format: "JSON object returned as MCP text content.",
+      errors: "Returns `isError=true` with an error message when validation/execution fails.",
+    },
+    example: {
+      tool: toolName,
+      arguments: exampleArgs,
+    },
+  };
+}
 
 export function registerDocsTools(
   tools: Map<string, ToolHandler>,
@@ -607,8 +1142,12 @@ export function registerDocsTools(
     description:
       "Get guidance on which Godot MCP tools to use. Call this first if unsure which tool to use for a task.",
     inputSchema: z.object({
+      tool: z
+        .string()
+        .optional()
+        .describe("Specific tool name to get a standardized usage template for"),
       category: z
-        .enum(["all", "scenes", "scripts", "editor", "shaders", "resources", "procedural", "docs", "ui", "workflows"])
+        .enum(["all", "scenes", "scripts", "editor", "shaders", "resources", "animation", "input", "audio", "navigation", "procedural", "docs", "ui", "workflows", "coverage"])
         .optional()
         .describe("Specific category to get help on, or 'all' for overview"),
       task: z
@@ -617,7 +1156,23 @@ export function registerDocsTools(
         .describe("Describe what you want to do (e.g., 'add a player to my scene')"),
     }),
     handler: async (args) => {
-      const { category, task } = args as { category?: string; task?: string };
+      const { tool: toolName, category, task } = args as {
+        tool?: string;
+        category?: string;
+        task?: string;
+      };
+
+      if (toolName) {
+        const targetTool = tools.get(toolName);
+        if (!targetTool) {
+          return {
+            error: `Tool '${toolName}' not found`,
+            availableTools: Array.from(tools.keys()).sort(),
+          };
+        }
+
+        return buildToolTemplate(toolName, targetTool);
+      }
 
       // If a specific task is described, suggest relevant tools
       if (task) {
@@ -652,6 +1207,90 @@ export function registerDocsTools(
         if (taskLower.includes("shader") || taskLower.includes("effect") || taskLower.includes("visual")) {
           suggestions.push({ tool: "godot_generate_shader", reason: "Generate shader from preset" });
           suggestions.push({ tool: "godot_write_shader", reason: "Write custom shader" });
+        }
+
+        if (
+          taskLower.includes("animation") ||
+          taskLower.includes("keyframe") ||
+          taskLower.includes("animationplayer") ||
+          taskLower.includes("animationtree") ||
+          taskLower.includes("clip")
+        ) {
+          suggestions.push({ tool: "godot_animation_create_clip", reason: "Create animation clip resources" });
+          suggestions.push({ tool: "godot_animation_add_keyframe", reason: "Refine keyframe timing/values" });
+          suggestions.push({ tool: "godot_animation_setup_scene", reason: "Wire AnimationPlayer/AnimationTree in scene" });
+          if (
+            taskLower.includes("state machine") ||
+            taskLower.includes("transition") ||
+            taskLower.includes("blend")
+          ) {
+            suggestions.push({ tool: "godot_animation_build_state_machine_plan", reason: "Generate state-machine plan and script" });
+            suggestions.push({ tool: "godot_animation_build_blend_space_plan", reason: "Generate blend-space plan and script" });
+          }
+        }
+
+        if (
+          taskLower.includes("input") ||
+          taskLower.includes("control") ||
+          taskLower.includes("keybind") ||
+          taskLower.includes("binding") ||
+          taskLower.includes("action map") ||
+          taskLower.includes("rebind")
+        ) {
+          suggestions.push({ tool: "godot_input_list_actions", reason: "Inspect current InputMap actions" });
+          suggestions.push({ tool: "godot_input_set_action", reason: "Create/update action bindings" });
+          suggestions.push({ tool: "godot_input_apply_preset", reason: "Apply baseline control presets" });
+        }
+
+        if (
+          taskLower.includes("audio") ||
+          taskLower.includes("sound") ||
+          taskLower.includes("music") ||
+          taskLower.includes("bus") ||
+          taskLower.includes("sfx") ||
+          taskLower.includes("volume") ||
+          taskLower.includes("stream")
+        ) {
+          suggestions.push({ tool: "godot_audio_create_bus_layout", reason: "Create/update bus layout routing" });
+          suggestions.push({ tool: "godot_audio_set_bus", reason: "Tune bus levels and sends" });
+          suggestions.push({ tool: "godot_audio_configure_player", reason: "Assign streams and bus settings on players" });
+          if (
+            taskLower.includes("effect") ||
+            taskLower.includes("compressor") ||
+            taskLower.includes("eq") ||
+            taskLower.includes("reverb")
+          ) {
+            suggestions.push({ tool: "godot_audio_list_effect_presets", reason: "Browse available effect-chain presets" });
+            suggestions.push({ tool: "godot_audio_generate_effect_chain_script", reason: "Generate AudioServer effect-chain script" });
+          }
+          if (
+            taskLower.includes("mix") ||
+            taskLower.includes("snapshot") ||
+            taskLower.includes("profile")
+          ) {
+            suggestions.push({ tool: "godot_audio_apply_mix_profile", reason: "Apply named mix profile to bus layout" });
+          }
+        }
+
+        if (
+          taskLower.includes("navigation") ||
+          taskLower.includes("pathfinding") ||
+          taskLower.includes("navmesh") ||
+          taskLower.includes("agent") ||
+          taskLower.includes("path") ||
+          taskLower.includes("waypoint")
+        ) {
+          suggestions.push({ tool: "godot_navigation_add_region", reason: "Create navigation regions in scene files" });
+          suggestions.push({ tool: "godot_navigation_add_agent", reason: "Add configured navigation agents" });
+          suggestions.push({ tool: "godot_navigation_add_link", reason: "Create explicit navigation links" });
+          if (
+            taskLower.includes("bake") ||
+            taskLower.includes("validate") ||
+            taskLower.includes("debug")
+          ) {
+            suggestions.push({ tool: "godot_navigation_build_bake_plan", reason: "Generate bake checklist and readiness report" });
+            suggestions.push({ tool: "godot_navigation_validate_paths", reason: "Validate layers/link consistency before bake" });
+          }
         }
 
         if (taskLower.includes("dungeon") || taskLower.includes("procedural") || taskLower.includes("generate")) {
@@ -715,6 +1354,10 @@ export function registerDocsTools(
 
       // Return category-specific or full guide
       if (category && category !== "all") {
+        if (category === "coverage") {
+          return COVERAGE_GUIDE;
+        }
+
         if (category === "workflows") {
           return {
             category: "workflows",
@@ -741,7 +1384,8 @@ export function registerDocsTools(
         })),
         workflows: Object.keys(TOOL_GUIDE.workflows),
         tips: TOOL_GUIDE.tips,
-        usage: "Call godot_help with category='<name>' for details, or task='<description>' for suggestions",
+        usage:
+          "Call godot_help with tool='<tool_name>' for a full usage template, category='<name>' for category details, or task='<description>' for suggestions",
       };
     },
   });

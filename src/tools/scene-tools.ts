@@ -7,6 +7,11 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { TscnParser, ParsedScene, SceneNode } from "../parsers/tscn-parser.js";
 import type { ToolHandler, ServerState } from "../index.js";
+import {
+  getProjectRelativePath,
+  resolveProjectDirectory,
+  resolveProjectPath,
+} from "../utils/path-utils.js";
 
 export function registerSceneTools(
   tools: Map<string, ToolHandler>,
@@ -25,7 +30,7 @@ export function registerSceneTools(
     }),
     handler: async (args) => {
       const { path: scenePath } = args as { path: string };
-      const fullPath = resolvePath(scenePath, state.projectPath);
+      const fullPath = resolveProjectPath(scenePath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
@@ -103,7 +108,7 @@ export function registerSceneTools(
         path: string;
         scene: Partial<ParsedScene>;
       };
-      const fullPath = resolvePath(scenePath, state.projectPath);
+      const fullPath = resolveProjectPath(scenePath, state.projectPath);
 
       // Build complete scene with defaults
       const completeScene: ParsedScene = {
@@ -167,7 +172,7 @@ export function registerSceneTools(
         scenePath: string;
         node: Omit<SceneNode, "properties"> & { properties?: Record<string, unknown> };
       };
-      const fullPath = resolvePath(scenePath, state.projectPath);
+      const fullPath = resolveProjectPath(scenePath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
@@ -202,7 +207,7 @@ export function registerSceneTools(
         scenePath: string;
         nodePath: string;
       };
-      const fullPath = resolvePath(scenePath, state.projectPath);
+      const fullPath = resolveProjectPath(scenePath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
@@ -243,7 +248,7 @@ export function registerSceneTools(
         nodePath: string;
         updates: Partial<SceneNode>;
       };
-      const fullPath = resolvePath(scenePath, state.projectPath);
+      const fullPath = resolveProjectPath(scenePath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
@@ -273,7 +278,7 @@ export function registerSceneTools(
     }),
     handler: async (args) => {
       const { scenePath } = args as { scenePath: string };
-      const fullPath = resolvePath(scenePath, state.projectPath);
+      const fullPath = resolveProjectPath(scenePath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
@@ -309,7 +314,7 @@ export function registerSceneTools(
     }),
     handler: async (args) => {
       const { scenePath } = args as { scenePath: string };
-      const fullPath = resolvePath(scenePath, state.projectPath);
+      const fullPath = resolveProjectPath(scenePath, state.projectPath);
 
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
@@ -327,7 +332,7 @@ export function registerSceneTools(
 
       // Check external resource paths exist
       for (const extRes of scene.externalResources) {
-        const resPath = resolvePath(extRes.path, state.projectPath);
+        const resPath = resolveProjectPath(extRes.path, state.projectPath);
         try {
           await fs.access(resPath);
         } catch {
@@ -434,9 +439,7 @@ export function registerSceneTools(
     }),
     handler: async (args) => {
       const { directory } = args as { directory?: string };
-      const searchPath = directory
-        ? path.join(state.projectPath || ".", directory)
-        : state.projectPath || ".";
+      const searchPath = resolveProjectDirectory(directory, state.projectPath);
 
       const scenes = await findFiles(searchPath, ".tscn");
 
@@ -444,29 +447,13 @@ export function registerSceneTools(
         projectPath: state.projectPath,
         directory: directory || ".",
         scenes: scenes.map((s) => ({
-          path: path.relative(state.projectPath || ".", s),
-          resPath: `res://${path.relative(state.projectPath || ".", s)}`,
+          path: getProjectRelativePath(s, state.projectPath),
+          resPath: `res://${getProjectRelativePath(s, state.projectPath)}`,
         })),
         count: scenes.length,
       };
     },
   });
-}
-
-// Helper functions
-function resolvePath(inputPath: string, projectPath: string | null): string {
-  // Handle res:// paths
-  if (inputPath.startsWith("res://")) {
-    inputPath = inputPath.slice(6);
-  }
-
-  // If absolute, use as-is
-  if (path.isAbsolute(inputPath)) {
-    return inputPath;
-  }
-
-  // Relative to project
-  return path.join(projectPath || ".", inputPath);
 }
 
 async function findFiles(dir: string, extension: string): Promise<string[]> {

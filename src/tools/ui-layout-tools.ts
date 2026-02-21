@@ -2,6 +2,7 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { ToolHandler, ServerState } from "../index.js";
+import { resolveProjectPath } from "../utils/path-utils.js";
 
 // Anchor presets matching Godot's built-in presets
 const ANCHOR_PRESETS = {
@@ -176,10 +177,7 @@ export function registerUILayoutTools(
 
       const content = generateLayoutScene(layout_type, theme_path, options || {});
 
-      let outputPath = scenePath;
-      if (scenePath.startsWith("res://") && state.projectPath) {
-        outputPath = path.join(state.projectPath, scenePath.replace("res://", ""));
-      }
+      const outputPath = resolveProjectPath(scenePath, state.projectPath);
 
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await fs.writeFile(outputPath, content, "utf-8");
@@ -230,10 +228,10 @@ export function registerUILayoutTools(
       if (config.anchor_bottom !== 0) tscnProperties += `anchor_bottom = ${config.anchor_bottom}\n`;
 
       if (margins) {
-        if (margins.left) tscnProperties += `offset_left = ${margins.left}\n`;
-        if (margins.top) tscnProperties += `offset_top = ${margins.top}\n`;
-        if (margins.right) tscnProperties += `offset_right = ${margins.right}\n`;
-        if (margins.bottom) tscnProperties += `offset_bottom = ${margins.bottom}\n`;
+        if (margins.left !== undefined) tscnProperties += `offset_left = ${margins.left}\n`;
+        if (margins.top !== undefined) tscnProperties += `offset_top = ${margins.top}\n`;
+        if (margins.right !== undefined) tscnProperties += `offset_right = ${margins.right}\n`;
+        if (margins.bottom !== undefined) tscnProperties += `offset_bottom = ${margins.bottom}\n`;
       }
 
       return {
@@ -285,10 +283,7 @@ export function registerUILayoutTools(
         theme_path
       );
 
-      let outputPath = scenePath;
-      if (scenePath.startsWith("res://") && state.projectPath) {
-        outputPath = path.join(state.projectPath, scenePath.replace("res://", ""));
-      }
+      const outputPath = resolveProjectPath(scenePath, state.projectPath);
 
       await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await fs.writeFile(outputPath, content, "utf-8");

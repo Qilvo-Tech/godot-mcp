@@ -95,7 +95,7 @@ export function registerEditorTools(tools, state) {
         handler: async (args) => {
             ensureConnected();
             const { nodePath } = args;
-            const result = await sendRequest("scene_tree.select", { path: nodePath });
+            const result = await sendRequest("editor.select_node", { path: nodePath });
             return result;
         },
     });

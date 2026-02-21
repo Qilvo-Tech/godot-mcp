@@ -72,6 +72,8 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 			return _handle_get_log_file(params)
 		"editor.select_node":
 			return _handle_select_node(params)
+		"execute.gdscript":
+			return _handle_execute_gdscript(params)
 		_:
 			return {"error": {"code": -32601, "message": "Method not found: " + method}}
 
@@ -128,6 +130,7 @@ func _handle_add_node(params: Dictionary) -> Dictionary:
 	var parent_path: String = params.get("parent", ".")
 	var node_name: String = params.get("name", "")
 	var node_type: String = params.get("type", "Node")
+	var properties: Dictionary = params.get("properties", {})
 
 	if node_name.is_empty():
 		return {"error": {"code": -32602, "message": "Missing name parameter"}}
@@ -156,9 +159,25 @@ func _handle_add_node(params: Dictionary) -> Dictionary:
 	undo_redo.add_do_property(new_node, "owner", edited_scene)
 	undo_redo.add_do_reference(new_node)
 	undo_redo.add_undo_method(parent, "remove_child", new_node)
+
+	var applied_properties: Array = []
+	for prop_name in properties:
+		if prop_name in new_node:
+			var old_value = new_node.get(prop_name)
+			var new_value = _convert_value(properties[prop_name])
+			undo_redo.add_do_property(new_node, prop_name, new_value)
+			undo_redo.add_undo_property(new_node, prop_name, old_value)
+			applied_properties.append(prop_name)
+
 	undo_redo.commit_action()
 
-	return {"result": {"added": node_name, "path": str(new_node.get_path())}}
+	return {
+		"result": {
+			"added": node_name,
+			"path": str(new_node.get_path()),
+			"applied_properties": applied_properties
+		}
+	}
 
 
 func _handle_remove_node(params: Dictionary) -> Dictionary:
@@ -275,6 +294,43 @@ func _handle_get_project_info(_params: Dictionary) -> Dictionary:
 func _handle_refresh_filesystem(_params: Dictionary) -> Dictionary:
 	editor_interface.get_resource_filesystem().scan()
 	return {"result": {"refreshed": true}}
+
+
+func _handle_execute_gdscript(params: Dictionary) -> Dictionary:
+	var code: String = params.get("code", "")
+	if code.is_empty():
+		return {"error": {"code": -32602, "message": "Missing code parameter"}}
+
+	var script_source := "extends RefCounted\nfunc __mcp_exec(editor_interface, message_handler):\n"
+	script_source += _indent_code(code)
+
+	var temp_script := GDScript.new()
+	temp_script.source_code = script_source
+	var err := temp_script.reload()
+	if err != OK:
+		return {
+			"error": {
+				"code": -32603,
+				"message": "Failed to compile script: " + error_string(err)
+			}
+		}
+
+	var runner := RefCounted.new()
+	runner.set_script(temp_script)
+
+	var result = null
+	if runner.has_method("__mcp_exec"):
+		result = runner.call("__mcp_exec", editor_interface, self)
+
+	return {"result": {"executed": true, "result": result}}
+
+
+func _indent_code(code: String) -> String:
+	var lines := code.split("\n")
+	var indented: PackedStringArray = []
+	for line in lines:
+		indented.append("\t" + line)
+	return "\n".join(indented) + "\n"
 
 
 func _success_response(id, result) -> String:
