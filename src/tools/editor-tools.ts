@@ -266,30 +266,127 @@ export function registerEditorTools(
 
   // Get editor errors
   tools.set("godot_editor_get_errors", {
-    description: "Get the current list of errors from the Godot editor.",
-    inputSchema: z.object({}),
-    handler: async () => {
+    description:
+      "Get structured editor/runtime errors with optional severity/query filtering and log-file inclusion.",
+    inputSchema: z.object({
+      includeRuntime: z
+        .boolean()
+        .optional()
+        .describe("Include runtime errors captured from debugger sessions (default: true)"),
+      includeScript: z
+        .boolean()
+        .optional()
+        .describe("Include script compile checks from currently open scripts (default: true)"),
+      includeLogFile: z
+        .boolean()
+        .optional()
+        .describe("Include error/warning matches from the latest Godot log file (default: true)"),
+      severity: z
+        .enum(["all", "error", "warning", "info", "debug"])
+        .optional()
+        .describe("Filter by severity level (default: all)"),
+      query: z
+        .string()
+        .optional()
+        .describe("Case-insensitive substring filter across message/path/source fields"),
+      logLines: z
+        .number()
+        .optional()
+        .describe("How many recent log-file lines to scan when includeLogFile=true (default: 200)"),
+      clear: z
+        .boolean()
+        .optional()
+        .describe("Clear in-memory runtime error buffer after retrieval"),
+    }),
+    handler: async (args) => {
       ensureConnected();
+      const {
+        includeRuntime = true,
+        includeScript = true,
+        includeLogFile = true,
+        severity = "all",
+        query = "",
+        logLines = 200,
+        clear = false,
+      } = args as {
+        includeRuntime?: boolean;
+        includeScript?: boolean;
+        includeLogFile?: boolean;
+        severity?: "all" | "error" | "warning" | "info" | "debug";
+        query?: string;
+        logLines?: number;
+        clear?: boolean;
+      };
 
-      const result = await sendRequest("info.errors", {});
+      const result = await sendRequest("info.errors", {
+        include_runtime: includeRuntime,
+        include_script: includeScript,
+        include_log_file: includeLogFile,
+        severity,
+        query,
+        log_lines: logLines,
+        clear,
+      });
       return result;
     },
   });
 
   // Get editor output
   tools.set("godot_editor_get_output", {
-    description: "Get the output console content from the Godot editor.",
+    description:
+      "Get captured output with severity/source/query filters and optional structured metadata.",
     inputSchema: z.object({
       lines: z
         .number()
         .optional()
         .describe("Number of recent lines to retrieve (default: 50)"),
+      level: z
+        .enum(["all", "error", "warning", "info", "debug"])
+        .optional()
+        .describe("Filter output by severity level (default: all)"),
+      source: z
+        .enum(["all", "runtime", "debugger", "bridge", "editor"])
+        .optional()
+        .describe("Filter by output source (default: all)"),
+      query: z
+        .string()
+        .optional()
+        .describe("Case-insensitive substring filter on output text"),
+      includeMetadata: z
+        .boolean()
+        .optional()
+        .describe("Include structured output entries with level/source/timestamp"),
+      clear: z
+        .boolean()
+        .optional()
+        .describe("Clear in-memory output buffer after retrieval"),
     }),
     handler: async (args) => {
       ensureConnected();
-      const { lines = 50 } = args as { lines?: number };
+      const {
+        lines = 50,
+        level = "all",
+        source = "all",
+        query = "",
+        includeMetadata = true,
+        clear = false,
+      } = args as {
+        lines?: number;
+        level?: "all" | "error" | "warning" | "info" | "debug";
+        source?: "all" | "runtime" | "debugger" | "bridge" | "editor";
+        query?: string;
+        includeMetadata?: boolean;
+        clear?: boolean;
+      };
 
-      const result = await sendRequest("info.output", { lines });
+      const result = await sendRequest("info.output", {
+        lines,
+        level,
+        source,
+        query,
+        include_metadata: includeMetadata,
+        clear,
+      });
       return result;
     },
   });
@@ -297,22 +394,52 @@ export function registerEditorTools(
   // Get log file content (captures all print output)
   tools.set("godot_editor_get_log_file", {
     description:
-      "Read Godot's log file which captures ALL print output, errors, and warnings from both editor and running game. Use this to debug runtime issues.",
+      "Read and filter the latest Godot log file with structured metadata and incremental tail support.",
     inputSchema: z.object({
       lines: z
         .number()
         .optional()
         .describe("Number of recent lines to retrieve (default: 100)"),
       filter: z
-        .enum(["all", "error", "warning"])
+        .enum(["all", "error", "warning", "info", "debug"])
         .optional()
-        .describe("Filter log entries: 'all', 'error', or 'warning' (default: all)"),
+        .describe("Filter log entries by severity (default: all)"),
+      query: z
+        .string()
+        .optional()
+        .describe("Case-insensitive substring filter on log line content"),
+      sinceLine: z
+        .number()
+        .optional()
+        .describe("Only include lines with line_number > sinceLine for incremental polling"),
+      includeMetadata: z
+        .boolean()
+        .optional()
+        .describe("Include structured line entries with severity and line numbers"),
     }),
     handler: async (args) => {
       ensureConnected();
-      const { lines = 100, filter = "all" } = args as { lines?: number; filter?: string };
+      const {
+        lines = 100,
+        filter = "all",
+        query = "",
+        sinceLine = 0,
+        includeMetadata = true,
+      } = args as {
+        lines?: number;
+        filter?: "all" | "error" | "warning" | "info" | "debug";
+        query?: string;
+        sinceLine?: number;
+        includeMetadata?: boolean;
+      };
 
-      const result = await sendRequest("info.log_file", { lines, filter });
+      const result = await sendRequest("info.log_file", {
+        lines,
+        filter,
+        query,
+        since_line: sinceLine,
+        include_metadata: includeMetadata,
+      });
       return result;
     },
   });

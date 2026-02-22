@@ -91,7 +91,7 @@ class AIBridgeDebuggerPlugin extends EditorDebuggerPlugin:
 		"game_view:mouse_over",
 	]
 
-	func _capture(message: String, data: Array, session_id: int) -> bool:
+	func _capture(message: String, data: Array, _session_id: int) -> bool:
 		if not message_handler:
 			return false
 
@@ -99,10 +99,6 @@ class AIBridgeDebuggerPlugin extends EditorDebuggerPlugin:
 		for filtered in FILTERED_MESSAGES:
 			if message == filtered:
 				return false
-
-		# Log ALL message types for debugging (helps discover new message formats)
-		if message.begins_with("error") or message.contains("warning") or message.contains("script"):
-			message_handler.log_output("[CAPTURE:%s] %s" % [message, _format_data(data)])
 
 		# Parse based on message type
 		match message:
@@ -117,21 +113,24 @@ class AIBridgeDebuggerPlugin extends EditorDebuggerPlugin:
 			"stack_frame_vars":
 				pass  # Variable inspection, skip
 			"debug_exit":
-				message_handler.log_output("[DEBUG] Resumed execution")
+				message_handler.log_output("[DEBUG] Resumed execution", "debug", "debugger")
 			_:
-				# Log unknown messages so we can see what we're missing
+				# Keep unknown debugger packets as debug-level breadcrumbs.
 				if data.size() > 0 and not message.begins_with("performance") and not message.begins_with("servers"):
-					message_handler.log_output("[MSG:%s] %s" % [message, _format_data(data)])
+					message_handler.log_output(
+						"[MSG:%s] %s" % [message, _format_data(data)],
+						"debug",
+						"debugger"
+					)
 
 		return false  # Let other handlers also process
 
 	func _handle_output(data: Array) -> void:
 		for item in data:
 			if item is String:
-				# Clean up the output (remove trailing newlines)
 				var clean: String = (item as String).strip_edges()
 				if not clean.is_empty():
-					message_handler.log_output(clean)
+					message_handler.log_output(clean, "info", "runtime")
 
 	func _handle_error(data: Array) -> void:
 		# Error format: [is_warning, function, file, line, error_msg, stack_info...]
@@ -149,9 +148,12 @@ class AIBridgeDebuggerPlugin extends EditorDebuggerPlugin:
 				if not func_name.is_empty():
 					location += " in %s()" % func_name
 
-			message_handler.log_output("%s%s: %s" % [prefix, location, error_msg])
+			message_handler.log_output(
+				"%s%s: %s" % [prefix, location, error_msg],
+				"warning" if is_warning else "error",
+				"runtime"
+			)
 
-			# Store in error list for retrieval
 			message_handler.log_error({
 				"type": "warning" if is_warning else "error",
 				"file": file_path,
@@ -160,24 +162,26 @@ class AIBridgeDebuggerPlugin extends EditorDebuggerPlugin:
 				"message": error_msg
 			})
 		else:
-			# Fallback for unexpected format
-			message_handler.log_output("[ERROR] %s" % _format_data(data))
+			message_handler.log_output("[ERROR] %s" % _format_data(data), "error", "runtime")
 
 	func _handle_debug_enter(data: Array) -> void:
 		# Debug break: [can_continue, reason, has_stackdump]
 		if data.size() >= 2:
 			var reason: String = str(data[1]) if data.size() > 1 else "unknown"
-			message_handler.log_output("[BREAK] Debugger paused: %s" % reason)
+			message_handler.log_output("[BREAK] Debugger paused: %s" % reason, "warning", "debugger")
 
 	func _handle_stack_dump(data: Array) -> void:
-		# Stack trace info
-		message_handler.log_output("[STACK] Call stack:")
+		message_handler.log_output("[STACK] Call stack:", "debug", "debugger")
 		for i in range(0, data.size(), 3):
 			if i + 2 < data.size():
 				var file: String = str(data[i])
 				var line: int = data[i + 1] if data[i + 1] is int else 0
 				var func_name: String = str(data[i + 2])
-				message_handler.log_output("  → %s:%d in %s()" % [file.get_file(), line, func_name])
+				message_handler.log_output(
+					"  → %s:%d in %s()" % [file.get_file(), line, func_name],
+					"debug",
+					"debugger"
+				)
 
 	func _format_data(data: Array) -> String:
 		if data.size() == 0:
@@ -197,8 +201,16 @@ class AIBridgeDebuggerPlugin extends EditorDebuggerPlugin:
 
 	func _on_session_started(session_id: int) -> void:
 		if message_handler:
-			message_handler.log_output("[DEBUG] Game started (session %d)" % session_id)
+			message_handler.log_output(
+				"[DEBUG] Game started (session %d)" % session_id,
+				"info",
+				"debugger"
+			)
 
 	func _on_session_stopped(session_id: int) -> void:
 		if message_handler:
-			message_handler.log_output("[DEBUG] Game stopped (session %d)" % session_id)
+			message_handler.log_output(
+				"[DEBUG] Game stopped (session %d)" % session_id,
+				"info",
+				"debugger"
+			)

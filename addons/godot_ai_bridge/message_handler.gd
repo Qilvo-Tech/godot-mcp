@@ -4,10 +4,11 @@ extends RefCounted
 
 var editor_interface: EditorInterface
 var undo_redo: EditorUndoRedoManager
-var output_buffer: Array[String] = []
+var output_buffer: Array[Dictionary] = []
 var error_buffer: Array[Dictionary] = []
 const MAX_OUTPUT_LINES: int = 500
 const MAX_ERROR_COUNT: int = 100
+const LOG_LEVELS := ["debug", "info", "warning", "error"]
 
 
 func handle_message(message: String) -> String:
@@ -356,11 +357,19 @@ func _handle_get_errors(params: Dictionary) -> Dictionary:
 	var errors: Array = []
 	var include_runtime: bool = params.get("include_runtime", true)
 	var include_script: bool = params.get("include_script", true)
+	var include_log_file: bool = params.get("include_log_file", true)
+	var severity: String = _normalize_log_level(str(params.get("severity", "all")))
+	var query: String = str(params.get("query", "")).strip_edges()
+	var log_lines: int = int(params.get("log_lines", 200))
 	var clear: bool = params.get("clear", false)
+	var source_counts := {"runtime": 0, "script": 0, "log_file": 0}
 
 	# Add runtime errors from buffer
 	if include_runtime:
-		errors.append_array(error_buffer)
+		for runtime_error in error_buffer:
+			if _error_matches(runtime_error, severity, query):
+				errors.append(runtime_error)
+				source_counts["runtime"] = int(source_counts["runtime"]) + 1
 
 	# Get script editor to check for script errors
 	if include_script:
@@ -375,100 +384,134 @@ func _handle_get_errors(params: Dictionary) -> Dictionary:
 					test_script.source_code = source
 					var err = test_script.reload(false)
 					if err != OK:
-						errors.append({
+						var script_error := {
 							"path": script.resource_path,
+							"file": script.resource_path,
 							"error": error_string(err),
-							"type": "script_error"
-						})
+							"message": error_string(err),
+							"type": "script_error",
+							"level": "error",
+							"source": "script_editor"
+						}
+						if _error_matches(script_error, severity, query):
+							errors.append(script_error)
+							source_counts["script"] = int(source_counts["script"]) + 1
+
+	if include_log_file:
+		var log_scan = _scan_recent_log_entries(log_lines, severity, query)
+		if not log_scan.has("error"):
+			var log_entries: Array = log_scan.get("entries", [])
+			for log_entry in log_entries:
+				if not log_entry is Dictionary:
+					continue
+				var level: String = str(log_entry.get("level", "info"))
+				if level != "error" and level != "warning":
+					continue
+				var mapped_error := {
+					"type": level,
+					"level": level,
+					"source": "log_file",
+					"log_file": log_scan.get("log_file", ""),
+					"line_number": log_entry.get("line_number", 0),
+					"timestamp": log_entry.get("timestamp", ""),
+					"message": log_entry.get("text", ""),
+				}
+				if _error_matches(mapped_error, severity, query):
+					errors.append(mapped_error)
+					source_counts["log_file"] = int(source_counts["log_file"]) + 1
+
+	errors = _dedupe_error_entries(errors)
 
 	# Clear error buffer if requested
 	if clear:
 		error_buffer.clear()
 
-	return {"result": {"errors": errors, "count": errors.size(), "runtime_count": error_buffer.size()}}
+	return {
+		"result": {
+			"errors": errors,
+			"count": errors.size(),
+			"runtime_count": error_buffer.size(),
+			"source_counts": source_counts,
+			"filters": {
+				"severity": severity,
+				"query": query,
+				"include_runtime": include_runtime,
+				"include_script": include_script,
+				"include_log_file": include_log_file
+			}
+		}
+	}
 
 
 func _handle_get_output(params: Dictionary) -> Dictionary:
 	var lines: int = params.get("lines", 50)
+	var level: String = _normalize_log_level(str(params.get("level", "all")))
+	var source: String = str(params.get("source", "all")).to_lower()
+	var query: String = str(params.get("query", "")).strip_edges()
+	var clear: bool = params.get("clear", false)
+	var include_metadata: bool = params.get("include_metadata", true)
+	var filtered_output: Array[Dictionary] = []
 
-	# Return recent output from our buffer
-	var start_idx: int = max(0, output_buffer.size() - lines)
-	var recent_output = output_buffer.slice(start_idx)
+	for entry in output_buffer:
+		if _output_entry_matches(entry, level, source, query):
+			filtered_output.append(entry)
+
+	var recent_output: Array[Dictionary] = _take_last_entries(filtered_output, lines)
+	var output_lines: Array[String] = []
+	for entry in recent_output:
+		output_lines.append(str(entry.get("line", entry.get("message", ""))))
+
+	if clear:
+		output_buffer.clear()
 
 	return {
 		"result": {
-			"output": recent_output,
+			"output": output_lines,
+			"entries": recent_output if include_metadata else [],
 			"total_lines": output_buffer.size(),
-			"returned_lines": recent_output.size()
+			"matched_lines": filtered_output.size(),
+			"returned_lines": output_lines.size(),
+			"filters": {
+				"level": level,
+				"source": source,
+				"query": query
+			}
 		}
 	}
 
 
 func _handle_get_log_file(params: Dictionary) -> Dictionary:
 	var lines: int = params.get("lines", 100)
-	var filter: String = params.get("filter", "")  # Optional: "error", "warning", "all"
+	var filter: String = _normalize_log_level(str(params.get("filter", "all")))
+	var query: String = str(params.get("query", "")).strip_edges()
+	var since_line: int = int(params.get("since_line", 0))
+	var include_metadata: bool = params.get("include_metadata", true)
+	var scan_result = _scan_recent_log_entries(lines, filter, query, since_line)
 
-	# Get the user data path where Godot stores logs
-	var user_path := OS.get_user_data_dir()
-	var logs_dir := user_path + "/logs"
+	if scan_result.has("error"):
+		return {"error": {"code": -32603, "message": str(scan_result.get("error", "Unknown log read error"))}}
 
-	# Find the most recent log file
-	var dir := DirAccess.open(logs_dir)
-	if not dir:
-		return {"error": {"code": -32603, "message": "Cannot access logs directory: " + logs_dir}}
-
-	var log_files: Array[String] = []
-	dir.list_dir_begin()
-	var file_name := dir.get_next()
-	while file_name != "":
-		if file_name.ends_with(".log"):
-			log_files.append(logs_dir + "/" + file_name)
-		file_name = dir.get_next()
-	dir.list_dir_end()
-
-	if log_files.is_empty():
-		return {"result": {"lines": [], "message": "No log files found"}}
-
-	# Sort by modification time (most recent first)
-	log_files.sort_custom(func(a: String, b: String) -> bool:
-		return FileAccess.get_modified_time(a) > FileAccess.get_modified_time(b)
-	)
-
-	# Read the most recent log file
-	var log_path: String = log_files[0]
-	var file := FileAccess.open(log_path, FileAccess.READ)
-	if not file:
-		return {"error": {"code": -32603, "message": "Cannot read log file: " + log_path}}
-
-	var content := file.get_as_text()
-	file.close()
-
-	# Split into lines and get the last N lines
-	var all_lines := content.split("\n")
-	var filtered_lines: Array[String] = []
-
-	# Apply filter if specified
-	for line in all_lines:
-		if filter.is_empty() or filter == "all":
-			filtered_lines.append(line)
-		elif filter == "error" and (line.contains("ERROR") or line.contains("error")):
-			filtered_lines.append(line)
-		elif filter == "warning" and (line.contains("WARNING") or line.contains("warning")):
-			filtered_lines.append(line)
-
-	# Get last N lines
-	var start_idx: int = max(0, filtered_lines.size() - lines)
-	var recent_lines: Array[String] = []
-	for i in range(start_idx, filtered_lines.size()):
-		if not filtered_lines[i].is_empty():
-			recent_lines.append(filtered_lines[i])
+	var entries: Array = scan_result.get("entries", [])
+	var line_text: Array[String] = []
+	for entry in entries:
+		if entry is Dictionary:
+			line_text.append(str(entry.get("text", "")))
 
 	return {
 		"result": {
-			"lines": recent_lines,
-			"log_file": log_path,
-			"total_lines": all_lines.size(),
-			"returned_lines": recent_lines.size()
+			"lines": line_text,
+			"entries": entries if include_metadata else [],
+			"log_file": scan_result.get("log_file", ""),
+			"total_lines": scan_result.get("total_lines", 0),
+			"matched_lines": scan_result.get("matched_lines", 0),
+			"returned_lines": line_text.size(),
+			"next_since_line": scan_result.get("next_since_line", 0),
+			"level_counts": scan_result.get("level_counts", {}),
+			"filters": {
+				"filter": filter,
+				"query": query,
+				"since_line": since_line
+			}
 		}
 	}
 
@@ -492,10 +535,23 @@ func _handle_select_node(params: Dictionary) -> Dictionary:
 	return {"result": {"selected": path}}
 
 
-func log_output(text: String) -> void:
-	var timestamp = Time.get_time_string_from_system()
-	var line = "[%s] %s" % [timestamp, text]
-	output_buffer.append(line)
+func log_output(text: String, level: String = "info", source: String = "runtime") -> void:
+	var message: String = text.strip_edges()
+	if message.is_empty():
+		return
+
+	var timestamp = Time.get_datetime_string_from_system()
+	var normalized_level: String = _normalize_log_level(level)
+	if normalized_level == "all":
+		normalized_level = _classify_log_level(message)
+	var line = "[%s] %s" % [timestamp, message]
+	output_buffer.append({
+		"timestamp": timestamp,
+		"level": normalized_level,
+		"source": source,
+		"message": message,
+		"line": line
+	})
 
 	# Keep buffer size limited
 	while output_buffer.size() > MAX_OUTPUT_LINES:
@@ -503,9 +559,19 @@ func log_output(text: String) -> void:
 
 
 func log_error(error_data: Dictionary) -> void:
-	var timestamp = Time.get_time_string_from_system()
-	error_data["timestamp"] = timestamp
-	error_buffer.append(error_data)
+	var entry := error_data.duplicate(true)
+	var timestamp = Time.get_datetime_string_from_system()
+	if not entry.has("timestamp"):
+		entry["timestamp"] = timestamp
+	var level: String = _normalize_log_level(str(entry.get("level", entry.get("type", "error"))))
+	if level == "all":
+		level = _classify_log_level(str(entry.get("message", "")))
+	entry["level"] = level
+	if not entry.has("type"):
+		entry["type"] = level
+	if not entry.has("source"):
+		entry["source"] = "runtime"
+	error_buffer.append(entry)
 
 	# Keep buffer size limited
 	while error_buffer.size() > MAX_ERROR_COUNT:
@@ -518,3 +584,215 @@ func clear_errors() -> void:
 
 func clear_output() -> void:
 	output_buffer.clear()
+
+
+func _normalize_log_level(level: String) -> String:
+	var normalized := level.to_lower().strip_edges()
+	if normalized.is_empty() or normalized == "all":
+		return "all"
+	if LOG_LEVELS.has(normalized):
+		return normalized
+	return "all"
+
+
+func _classify_log_level(text: String) -> String:
+	var lower := text.to_lower()
+	if (
+		lower.contains("error")
+		or lower.contains("exception")
+		or lower.contains("failed")
+		or lower.contains("fatal")
+	):
+		return "error"
+	if lower.contains("warning") or lower.contains("warn"):
+		return "warning"
+	if lower.contains("debug") or lower.contains("[msg:") or lower.contains("[stack]"):
+		return "debug"
+	return "info"
+
+
+func _line_matches_filter(line: String, line_level: String, filter_level: String, query: String) -> bool:
+	if filter_level != "all" and line_level != filter_level:
+		return false
+	if not query.is_empty() and not line.to_lower().contains(query.to_lower()):
+		return false
+	return true
+
+
+func _extract_timestamp_from_line(line: String) -> String:
+	var regex := RegEx.new()
+	var compile_err = regex.compile("^\\[([^\\]]+)\\]")
+	if compile_err != OK:
+		return ""
+	var match = regex.search(line)
+	if match:
+		return match.get_string(1)
+	return ""
+
+
+func _resolve_latest_log_file_path() -> Dictionary:
+	var user_path := OS.get_user_data_dir()
+	var logs_dir := user_path + "/logs"
+	var dir := DirAccess.open(logs_dir)
+	if not dir:
+		return {"error": "Cannot access logs directory: " + logs_dir}
+
+	var log_files: Array[String] = []
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if file_name.ends_with(".log"):
+			log_files.append(logs_dir + "/" + file_name)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+	if log_files.is_empty():
+		return {"error": "No log files found"}
+
+	log_files.sort_custom(func(a: String, b: String) -> bool:
+		return FileAccess.get_modified_time(a) > FileAccess.get_modified_time(b)
+	)
+
+	return {"path": log_files[0]}
+
+
+func _scan_recent_log_entries(
+	lines: int,
+	filter_level: String,
+	query: String,
+	since_line: int = 0
+) -> Dictionary:
+	var log_info = _resolve_latest_log_file_path()
+	if log_info.has("error"):
+		return {"error": log_info["error"]}
+
+	var log_path: String = str(log_info.get("path", ""))
+	var file := FileAccess.open(log_path, FileAccess.READ)
+	if not file:
+		return {"error": "Cannot read log file: " + log_path}
+
+	var content := file.get_as_text()
+	file.close()
+
+	var all_lines := content.replace("\r", "").split("\n")
+	var matched_entries: Array[Dictionary] = []
+	var level_counts := {"debug": 0, "info": 0, "warning": 0, "error": 0}
+	var normalized_filter: String = _normalize_log_level(filter_level)
+
+	for i in range(all_lines.size()):
+		var line_number: int = i + 1
+		if since_line > 0 and line_number <= since_line:
+			continue
+
+		var raw_line: String = all_lines[i].strip_edges()
+		if raw_line.is_empty():
+			continue
+
+		var level := _classify_log_level(raw_line)
+		if not _line_matches_filter(raw_line, level, normalized_filter, query):
+			continue
+
+		level_counts[level] = int(level_counts.get(level, 0)) + 1
+		matched_entries.append({
+			"line_number": line_number,
+			"level": level,
+			"text": raw_line,
+			"timestamp": _extract_timestamp_from_line(raw_line),
+		})
+
+	var recent_entries: Array[Dictionary] = _take_last_entries(matched_entries, lines)
+
+	return {
+		"log_file": log_path,
+		"entries": recent_entries,
+		"total_lines": all_lines.size(),
+		"matched_lines": matched_entries.size(),
+		"next_since_line": all_lines.size(),
+		"level_counts": level_counts,
+	}
+
+
+func _take_last_entries(entries: Array[Dictionary], max_count: int) -> Array[Dictionary]:
+	if max_count <= 0:
+		var empty: Array[Dictionary] = []
+		return empty
+	var start_idx: int = max(0, entries.size() - max_count)
+	var recent: Array[Dictionary] = []
+	for i in range(start_idx, entries.size()):
+		recent.append(entries[i])
+	return recent
+
+
+func _output_entry_matches(
+	entry: Dictionary,
+	level: String,
+	source: String,
+	query: String
+) -> bool:
+	var entry_level: String = _normalize_log_level(str(entry.get("level", "info")))
+	if level != "all" and entry_level != level:
+		return false
+
+	var entry_source: String = str(entry.get("source", "runtime")).to_lower()
+	if source != "all" and source != entry_source:
+		return false
+
+	if not query.is_empty():
+		var haystack := (
+			str(entry.get("message", ""))
+			+ " "
+			+ str(entry.get("line", ""))
+		).to_lower()
+		if not haystack.contains(query.to_lower()):
+			return false
+
+	return true
+
+
+func _error_matches(entry: Dictionary, severity: String, query: String) -> bool:
+	var level: String = _normalize_log_level(str(entry.get("level", entry.get("type", "error"))))
+	if level == "all":
+		level = _classify_log_level(str(entry.get("message", entry.get("error", ""))))
+
+	if severity != "all":
+		if level != severity:
+			return false
+
+	if not query.is_empty():
+		var haystack := (
+			str(entry.get("message", entry.get("error", "")))
+			+ " "
+			+ str(entry.get("file", entry.get("path", "")))
+			+ " "
+			+ str(entry.get("function", ""))
+			+ " "
+			+ str(entry.get("source", ""))
+		).to_lower()
+		if not haystack.contains(query.to_lower()):
+			return false
+
+	return true
+
+
+func _dedupe_error_entries(errors: Array) -> Array:
+	var deduped: Array = []
+	var seen := {}
+
+	for item in errors:
+		if not item is Dictionary:
+			continue
+		var entry: Dictionary = item
+		var key := "%s|%s|%s|%s|%s|%s" % [
+			str(entry.get("source", "")),
+			str(entry.get("file", entry.get("path", ""))),
+			str(entry.get("line", entry.get("line_number", ""))),
+			str(entry.get("function", "")),
+			str(entry.get("type", entry.get("level", ""))),
+			str(entry.get("message", entry.get("error", ""))),
+		]
+		if seen.has(key):
+			continue
+		seen[key] = true
+		deduped.append(entry)
+
+	return deduped
