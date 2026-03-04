@@ -11,6 +11,18 @@ function readProjectFile(relativePath: string): string {
 }
 
 describe("editor RPC contract", () => {
+  it("uses a statically typed execute wrapper for strict-typing projects", () => {
+    const pluginHandler = readProjectFile(
+      "addons/godot_ai_bridge/message_handler.gd"
+    );
+
+    expect(pluginHandler).toContain(
+      "func __mcp_exec(editor_interface: Variant, message_handler: Variant) -> Variant:"
+    );
+
+    expect(pluginHandler).toContain("var runner: Object = temp_script.new()");
+  });
+
   it("keeps editor tool RPC methods in sync with plugin dispatch", () => {
     const editorTools = readProjectFile("src/tools/editor-tools.ts");
     const pluginHandler = readProjectFile("addons/godot_ai_bridge/message_handler.gd");

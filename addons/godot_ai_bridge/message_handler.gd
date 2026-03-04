@@ -302,28 +302,141 @@ func _handle_execute_gdscript(params: Dictionary) -> Dictionary:
 	if code.is_empty():
 		return {"error": {"code": -32602, "message": "Missing code parameter"}}
 
-	var script_source := "extends RefCounted\nfunc __mcp_exec(editor_interface, message_handler):\n"
+	var log_checkpoint: int = _get_log_checkpoint_line()
+	var script_source := "extends RefCounted\nfunc __mcp_exec(editor_interface: Variant, message_handler: Variant) -> Variant:\n"
 	script_source += _indent_code(code)
 
 	var temp_script := GDScript.new()
 	temp_script.source_code = script_source
 	var err := temp_script.reload()
 	if err != OK:
+		var script_identifier: String = str(temp_script.resource_path)
+		var diagnostics: Array[String] = _collect_recent_script_diagnostics(
+			script_identifier,
+			log_checkpoint,
+			8
+		)
+		var error_message := "Failed to compile script: " + error_string(err)
+		if not diagnostics.is_empty():
+			error_message += "\n" + "\n".join(diagnostics)
+		log_error({
+			"type": "script_error",
+			"level": "error",
+			"source": "execute.gdscript",
+			"message": error_message,
+			"error": error_string(err),
+			"script_path": script_identifier
+		})
 		return {
 			"error": {
 				"code": -32603,
-				"message": "Failed to compile script: " + error_string(err)
+				"message": error_message
 			}
 		}
 
-	var runner := RefCounted.new()
-	runner.set_script(temp_script)
+	var runner: Object = temp_script.new()
+	if runner == null:
+		var instantiate_error_message := "Failed to instantiate compiled script"
+		log_error({
+			"type": "script_error",
+			"level": "error",
+			"source": "execute.gdscript",
+			"message": instantiate_error_message,
+			"error": instantiate_error_message
+		})
+		return {
+			"error": {
+				"code": -32603,
+				"message": instantiate_error_message
+			}
+		}
 
-	var result = null
-	if runner.has_method("__mcp_exec"):
-		result = runner.call("__mcp_exec", editor_interface, self)
+	if not runner.has_method("__mcp_exec"):
+		var missing_method_message := "Compiled script is missing __mcp_exec entrypoint"
+		log_error({
+			"type": "script_error",
+			"level": "error",
+			"source": "execute.gdscript",
+			"message": missing_method_message,
+			"error": missing_method_message
+		})
+		return {
+			"error": {
+				"code": -32603,
+				"message": missing_method_message
+			}
+		}
+
+	var result = runner.call("__mcp_exec", editor_interface, self)
 
 	return {"result": {"executed": true, "result": result}}
+
+
+func _get_log_checkpoint_line() -> int:
+	var scan_result = _scan_recent_log_entries(1, "all", "")
+	if scan_result.has("error"):
+		return 0
+	return int(scan_result.get("next_since_line", 0))
+
+
+func _collect_recent_script_diagnostics(
+	script_identifier: String,
+	since_line: int = 0,
+	max_entries: int = 8
+) -> Array[String]:
+	var scan_result = _scan_recent_log_entries(300, "error", "", since_line)
+	if scan_result.has("error"):
+		var empty: Array[String] = []
+		return empty
+
+	var entries: Array = scan_result.get("entries", [])
+	var targeted: Array[String] = []
+	var fallback: Array[String] = []
+
+	for item in entries:
+		if not item is Dictionary:
+			continue
+		var entry: Dictionary = item
+		var entry_text := str(entry.get("text", "")).strip_edges()
+		if entry_text.is_empty():
+			continue
+
+		var has_script_ref := entry_text.contains("gdscript://")
+		var has_parse_signal := (
+			entry_text.contains("Parse Error")
+			or entry_text.contains("Parser Error")
+			or entry_text.contains("Warning treated as error")
+			or entry_text.contains("static type")
+		)
+		if not has_script_ref and not has_parse_signal:
+			continue
+
+		if not script_identifier.is_empty() and entry_text.contains(script_identifier):
+			targeted.append(entry_text)
+		elif has_script_ref and has_parse_signal:
+			fallback.append(entry_text)
+
+	var selected: Array[String] = targeted if not targeted.is_empty() else fallback
+	var deduped: Array[String] = []
+	var seen := {}
+	for line in selected:
+		if seen.has(line):
+			continue
+		seen[line] = true
+		deduped.append(line)
+
+	return _take_last_string_entries(deduped, max_entries)
+
+
+func _take_last_string_entries(entries: Array[String], max_count: int) -> Array[String]:
+	if max_count <= 0:
+		var empty: Array[String] = []
+		return empty
+	var start_idx: int = max(0, entries.size() - max_count)
+	var recent: Array[String] = []
+	for i in range(start_idx, entries.size()):
+		recent.append(entries[i])
+	return recent
 
 
 func _indent_code(code: String) -> String:
