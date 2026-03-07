@@ -6,6 +6,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { TscnParser } from "../parsers/tscn-parser.js";
 import { getProjectRelativePath, resolveProjectDirectory, resolveProjectPath, } from "../utils/path-utils.js";
+import { assertSceneParentExists, buildSceneNodePath, normalizeSceneNodePath, sceneHasNodePath, } from "../utils/scene-path-utils.js";
 export function registerSceneTools(tools, state) {
     // Read and parse a scene file
     tools.set("godot_read_scene", {
@@ -137,12 +138,21 @@ export function registerSceneTools(tools, state) {
             const fullPath = resolveProjectPath(scenePath, state.projectPath);
             const content = await fs.readFile(fullPath, "utf-8");
             const scene = TscnParser.parse(content);
-            TscnParser.addNode(scene, node);
+            const normalizedParent = assertSceneParentExists(scene, node.parent);
+            const addedPath = buildSceneNodePath(normalizedParent, node.name);
+            if (sceneHasNodePath(scene, addedPath)) {
+                throw new Error(`Node already exists: ${addedPath}`);
+            }
+            TscnParser.addNode(scene, {
+                ...node,
+                parent: normalizedParent,
+            });
             const newContent = TscnParser.serialize(scene);
             await fs.writeFile(fullPath, newContent, "utf-8");
             return {
                 success: true,
                 addedNode: node.name,
+                addedPath,
                 totalNodes: scene.nodes.length,
             };
         },
@@ -162,12 +172,13 @@ export function registerSceneTools(tools, state) {
             const content = await fs.readFile(fullPath, "utf-8");
             const scene = TscnParser.parse(content);
             const beforeCount = scene.nodes.length;
-            TscnParser.removeNode(scene, nodePath);
+            const normalizedNodePath = normalizeSceneNodePath(scene, nodePath);
+            TscnParser.removeNode(scene, normalizedNodePath);
             const newContent = TscnParser.serialize(scene);
             await fs.writeFile(fullPath, newContent, "utf-8");
             return {
                 success: true,
-                removedPath: nodePath,
+                removedPath: normalizedNodePath,
                 nodesRemoved: beforeCount - scene.nodes.length,
             };
         },
@@ -192,7 +203,8 @@ export function registerSceneTools(tools, state) {
             const fullPath = resolveProjectPath(scenePath, state.projectPath);
             const content = await fs.readFile(fullPath, "utf-8");
             const scene = TscnParser.parse(content);
-            const success = TscnParser.modifyNode(scene, nodePath, updates);
+            const normalizedNodePath = normalizeSceneNodePath(scene, nodePath);
+            const success = TscnParser.modifyNode(scene, normalizedNodePath, updates);
             if (!success) {
                 throw new Error(`Node not found: ${nodePath}`);
             }
@@ -200,7 +212,7 @@ export function registerSceneTools(tools, state) {
             await fs.writeFile(fullPath, newContent, "utf-8");
             return {
                 success: true,
-                modifiedPath: nodePath,
+                modifiedPath: normalizedNodePath,
                 updates,
             };
         },

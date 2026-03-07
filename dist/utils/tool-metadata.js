@@ -18,17 +18,20 @@ const MUTATING_TOOL_KEYWORDS = [
     "_refresh_",
 ];
 export function isMutatingToolName(toolName) {
-    return (MUTATING_TOOL_KEYWORDS.some((keyword) => toolName.includes(keyword)) ||
+    return ((toolName.startsWith("godot_runtime_") && toolName !== "godot_runtime_status") ||
+        MUTATING_TOOL_KEYWORDS.some((keyword) => toolName.includes(keyword)) ||
         toolName === "godot_connect" ||
         toolName === "godot_disconnect");
 }
 export function usesEditorBridgeTool(toolName) {
     return (toolName.startsWith("godot_editor_") ||
+        toolName.startsWith("godot_runtime_") ||
         toolName === "godot_connect" ||
         toolName === "godot_disconnect" ||
         toolName === "godot_connection_status");
 }
 export function requiresEditorBridgeConnection(toolName) {
-    return toolName.startsWith("godot_editor_") && !toolName.includes("connection_status");
+    return ((toolName.startsWith("godot_editor_") || toolName.startsWith("godot_runtime_")) &&
+        !toolName.includes("connection_status"));
 }
 //# sourceMappingURL=tool-metadata.js.map

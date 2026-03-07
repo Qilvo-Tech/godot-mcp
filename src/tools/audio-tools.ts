@@ -10,6 +10,10 @@ import * as path from "path";
 import { TscnParser, ParsedScene, SceneNode } from "../parsers/tscn-parser.js";
 import type { ToolHandler, ServerState } from "../index.js";
 import { getProjectRelativePath, resolveProjectPath } from "../utils/path-utils.js";
+import {
+  getSceneNodePath,
+  normalizeSceneNodePath,
+} from "../utils/scene-path-utils.js";
 
 export interface AudioBus {
   name: string;
@@ -374,7 +378,7 @@ export function registerAudioTools(
       const players = scene.nodes
         .filter((node) => isAudioPlayerNode(node))
         .map((node) => {
-          const nodePath = getNodePath(node);
+          const nodePath = getSceneNodePath(node);
           const stream = resolveStreamPath(scene, node);
           const base = { nodePath, type: node.type || "Unknown" };
 
@@ -440,14 +444,17 @@ export function registerAudioTools(
       const fullPath = resolveProjectPath(scenePath, state.projectPath);
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
-      const node = scene.nodes.find((entry) => getNodePath(entry) === nodePath);
+      const normalizedNodePath = normalizeSceneNodePath(scene, nodePath);
+      const node = scene.nodes.find(
+        (entry) => getSceneNodePath(entry) === normalizedNodePath
+      );
 
       if (!node) {
         throw new Error(`Node not found: ${nodePath}`);
       }
       if (!isAudioPlayerNode(node)) {
         throw new Error(
-          `Node '${nodePath}' is not an AudioStreamPlayer node (found type '${node.type || "unknown"}')`
+          `Node '${normalizedNodePath}' is not an AudioStreamPlayer node (found type '${node.type || "unknown"}')`
         );
       }
 
@@ -472,9 +479,11 @@ export function registerAudioTools(
         updates.autoplay = autoplay;
       }
 
-      const changed = TscnParser.modifyNode(scene, nodePath, { properties: updates });
+      const changed = TscnParser.modifyNode(scene, normalizedNodePath, {
+        properties: updates,
+      });
       if (!changed) {
-        throw new Error(`Failed to modify node: ${nodePath}`);
+        throw new Error(`Failed to modify node: ${normalizedNodePath}`);
       }
 
       await fs.writeFile(fullPath, TscnParser.serialize(scene), "utf-8");
@@ -482,7 +491,7 @@ export function registerAudioTools(
       return {
         success: true,
         scenePath,
-        nodePath,
+        nodePath: normalizedNodePath,
         updatedProperties: Object.keys(updates),
       };
     },
@@ -866,13 +875,6 @@ function isAudioPlayerNode(node: SceneNode): boolean {
     node.type === "AudioStreamPlayer2D" ||
     node.type === "AudioStreamPlayer3D"
   );
-}
-
-function getNodePath(node: SceneNode): string {
-  if (!node.parent || node.parent === ".") {
-    return node.name;
-  }
-  return `${node.parent}/${node.name}`;
 }
 
 function resolveStreamPath(scene: ParsedScene, node: SceneNode): string | null {

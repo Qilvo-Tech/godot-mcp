@@ -13,6 +13,7 @@
 |---|---|---|---|---|
 | Scene authoring (`.tscn`) | `Strong` | `godot_read_scene`, `godot_write_scene`, `godot_add_node`, `godot_modify_node`, `godot_validate_scene` | PackedScene instancing workflows, bulk refactors, richer semantic validation | `Medium` |
 | Live editor control | `Strong` | `godot_connect`, `godot_editor_*` suite | Event subscriptions/streaming deltas, richer selection/filter operations | `Medium` |
+| Runtime automation and screenshots | `Partial` | `godot_runtime_status`, `godot_runtime_wait`, `godot_runtime_press_action`, `godot_runtime_release_action`, `godot_runtime_tap_action`, `godot_runtime_mouse_move`, `godot_runtime_click`, `godot_runtime_type_text`, `godot_runtime_capture_screenshot` | Project-specific state snapshots/reset hooks, drag-and-drop, richer focus/window control | `High` |
 | GDScript workflows | `Strong` | `godot_read_script`, `godot_write_script`, `godot_analyze_script`, `godot_generate_script`, `godot_validate_script` | AST-grade refactors, symbol rename, dependency graphing | `Medium` |
 | UI workflows | `Strong` | `godot_ui_create_theme`, `godot_ui_create_menu`, `godot_ui_create_hud`, `godot_ui_create_layout`, `godot_ui_create_container` | Existing scene patching, accessibility checks, localization wiring | `Medium` |
 | Shader workflows | `Partial` | `godot_read_shader`, `godot_write_shader`, `godot_generate_shader` | Material assignment flows, shader graph equivalents, validation/linting | `Medium` |
@@ -32,8 +33,9 @@
 ### Phase 1 (Highest Impact)
 1. Input map refinement (runtime rebinding profiles + platform/device overrides).
 2. Audio refinement (direct effect serialization + runtime automation).
-3. Navigation refinement (editor bake execution + live path visualization).
-4. Animation refinement (direct graph authoring + advanced tracks).
+3. Runtime automation refinement (state snapshots/reset hooks + richer pointer semantics).
+4. Navigation refinement (editor bake execution + live path visualization).
+5. Animation refinement (direct graph authoring + advanced tracks).
 
 ### Phase 2 (Workflow Depth)
 1. Resource editing expansion for typed `Resource` workflows and dependency-safe updates.
@@ -49,4 +51,5 @@
 1. `animation-tools.ts`: direct `AnimationTree` graph authoring and non-value track support.
 2. `input-tools.ts`: add runtime/player profile and layered override workflows.
 3. `audio-tools.ts`: direct effect-chain serialization and runtime mix/state controls.
-4. `navigation-tools.ts`: editor bake execution and live debug overlays.
+4. `editor-tools.ts` + AI Bridge runtime harness: state snapshots/reset hooks and richer pointer semantics.
+5. `navigation-tools.ts`: editor bake execution and live debug overlays.

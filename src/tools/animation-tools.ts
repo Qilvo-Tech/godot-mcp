@@ -15,6 +15,11 @@ import {
   resolveProjectDirectory,
   resolveProjectPath,
 } from "../utils/path-utils.js";
+import {
+  assertSceneParentExists,
+  buildSceneNodePath,
+  sceneHasNodePath,
+} from "../utils/scene-path-utils.js";
 
 export interface AnimationKeyframe {
   time: number;
@@ -412,35 +417,35 @@ export function registerAnimationTools(
       const fullPath = resolveProjectPath(scenePath, state.projectPath);
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
-
-      assertParentExists(scene, parentPath);
+      const normalizedParentPath =
+        assertSceneParentExists(scene, parentPath) ?? ".";
 
       const created: string[] = [];
       const updated: string[] = [];
 
-      const playerNodePath = parentPath === "." ? playerName : `${parentPath}/${playerName}`;
-      if (!sceneHasNode(scene, playerNodePath)) {
+      const playerNodePath = buildSceneNodePath(normalizedParentPath, playerName);
+      if (!sceneHasNodePath(scene, playerNodePath)) {
         TscnParser.addNode(scene, {
           name: playerName,
           type: "AnimationPlayer",
-          parent: parentPath,
+          parent: normalizedParentPath,
           properties: {},
         });
         created.push(playerNodePath);
       }
 
       if (createTree) {
-        const treeNodePath = parentPath === "." ? treeName : `${parentPath}/${treeName}`;
+        const treeNodePath = buildSceneNodePath(normalizedParentPath, treeName);
         const treeProperties = {
           active: activeTree,
           anim_player: `NodePath("../${playerName}")`,
         };
 
-        if (!sceneHasNode(scene, treeNodePath)) {
+        if (!sceneHasNodePath(scene, treeNodePath)) {
           TscnParser.addNode(scene, {
             name: treeName,
             type: "AnimationTree",
-            parent: parentPath,
+            parent: normalizedParentPath,
             properties: treeProperties,
           });
           created.push(treeNodePath);
@@ -459,15 +464,11 @@ export function registerAnimationTools(
       return {
         success: true,
         scenePath,
-        parentPath,
+        parentPath: normalizedParentPath,
         created,
         updated,
         animationPlayerPath: playerNodePath,
-        animationTreePath: createTree
-          ? parentPath === "."
-            ? treeName
-            : `${parentPath}/${treeName}`
-          : null,
+        animationTreePath: createTree ? buildSceneNodePath(normalizedParentPath, treeName) : null,
       };
     },
   });
@@ -1223,27 +1224,6 @@ function summarizeClip(clip: AnimationClip): Record<string, unknown> {
     trackCount: clip.tracks.length,
     keyframeCount,
   };
-}
-
-function assertParentExists(scene: ParsedScene, parentPath: string): void {
-  if (parentPath === ".") {
-    return;
-  }
-
-  if (!scene.nodes.some((node) => getNodePath(node) === parentPath)) {
-    throw new Error(`Parent path not found in scene: ${parentPath}`);
-  }
-}
-
-function sceneHasNode(scene: ParsedScene, nodePath: string): boolean {
-  return scene.nodes.some((node) => getNodePath(node) === nodePath);
-}
-
-function getNodePath(node: SceneNode): string {
-  if (!node.parent || node.parent === ".") {
-    return node.name;
-  }
-  return `${node.parent}/${node.name}`;
 }
 
 function escapeString(value: string): string {

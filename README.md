@@ -1,6 +1,6 @@
 # Godot MCP Server
 
-MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. Provides **90 tools** across 13 categories for scene manipulation, script generation, shader creation, animation workflows, InputMap control setup, audio routing/player setup, navigation setup, UI building, procedural generation, project setup, and live editor control.
+MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. Provides **99 tools** across 13 categories for scene manipulation, script generation, shader creation, animation workflows, InputMap control setup, audio routing/player setup, navigation setup, UI building, procedural generation, project setup, live editor control, and runtime automation.
 
 > **Recommended:** For the best experience, pair this MCP with the [Godot Claude Skills](https://github.com/alexmeckes/godot-claude-skills) plugin. The MCP provides **tools** (read/write/edit capabilities) while the skills provide **knowledge** (GDScript best practices, scene design patterns, shader techniques). Together they give Claude deep Godot expertise.
 
@@ -24,6 +24,8 @@ MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. 
 - Run/stop scenes directly from your AI assistant
 - Capture runtime errors and console output
 - Select nodes in the editor
+- Drive the running game with synthetic actions, pointer events, and text entry
+- Capture viewport screenshots from the running game
 
 ### Documentation
 - Built-in Godot 4.x class documentation
@@ -105,7 +107,7 @@ See `docs/COVERAGE_MATRIX.md` for:
 
 ---
 
-## All 90 Tools
+## All 99 Tools
 
 ### Scene Tools (8 tools)
 
@@ -119,6 +121,8 @@ See `docs/COVERAGE_MATRIX.md` for:
 | `godot_list_scene_nodes` | List all nodes in a scene with hierarchy |
 | `godot_validate_scene` | Validate scene for missing resources and issues |
 | `godot_list_scenes` | List all .tscn files in project |
+
+File-based scene tools accept either scene-root-relative paths like `UI/Label` or live-editor style paths like `Main/UI/Label`.
 
 ### Script Tools (6 tools)
 
@@ -237,7 +241,7 @@ See `docs/COVERAGE_MATRIX.md` for:
 | `godot_search_docs` | Search documentation by keyword |
 | `godot_list_documented_classes` | List all documented classes by category |
 
-### Editor Tools (18 tools - Requires Plugin)
+### Editor Tools (27 tools - Requires Plugin)
 
 | Tool | Description |
 |------|-------------|
@@ -258,6 +262,15 @@ See `docs/COVERAGE_MATRIX.md` for:
 | `godot_editor_get_log_file` | Read Godot's log file for debugging |
 | `godot_editor_execute_gdscript` | Execute arbitrary GDScript in the editor |
 | `godot_editor_get_project_info` | Get project name, path, Godot version |
+| `godot_runtime_status` | Get runtime harness status from the running game |
+| `godot_runtime_wait` | Wait for frames or seconds inside the running game (defaults to one frame) |
+| `godot_runtime_press_action` | Press and hold an InputMap action |
+| `godot_runtime_release_action` | Release a pressed InputMap action |
+| `godot_runtime_tap_action` | Tap an InputMap action for a few frames |
+| `godot_runtime_mouse_move` | Move the synthetic runtime pointer |
+| `godot_runtime_click` | Click inside the running game viewport |
+| `godot_runtime_type_text` | Type into the focused runtime control |
+| `godot_runtime_capture_screenshot` | Capture the running game viewport to PNG |
 | `godot_editor_refresh_filesystem` | Trigger filesystem rescan |
 
 ### Project Tools (1 tool)
@@ -301,6 +314,7 @@ The AI Bridge plugin runs a WebSocket server inside the Godot editor that allows
 addons/godot_ai_bridge/
 ├── plugin.cfg           # Plugin metadata
 ├── godot_ai_bridge.gd   # Main EditorPlugin
+├── runtime_bridge.gd    # Runtime automation harness (autoload)
 ├── ws_server.gd         # WebSocket server implementation
 └── message_handler.gd   # JSON-RPC message handling
 ```
@@ -312,6 +326,7 @@ The plugin uses Godot's `EditorPlugin` and `EditorDebuggerPlugin` APIs to:
 1. **WebSocket Server** (`ws_server.gd`): Listens on port 6550 for connections
 2. **Message Handler** (`message_handler.gd`): Processes JSON-RPC requests
 3. **Debugger Plugin**: Captures runtime output, errors, and warnings from the running game
+4. **Runtime Harness** (`runtime_bridge.gd`): Receives debugger messages inside the running game for input automation and screenshot capture
 
 ### JSON-RPC Methods
 
@@ -329,6 +344,15 @@ The plugin responds to these JSON-RPC methods:
 | `editor.run_scene` | Run current or specified scene |
 | `editor.stop_scene` | Stop the running scene |
 | `editor.select_node` | Select a node in the scene tree |
+| `runtime.status` | Get runtime harness status and viewport metadata |
+| `runtime.wait` | Wait for frames or seconds in the running game (defaults to one frame when omitted) |
+| `runtime.press_action` | Press and hold an InputMap action |
+| `runtime.release_action` | Release a pressed InputMap action |
+| `runtime.tap_action` | Tap an InputMap action |
+| `runtime.mouse_move` | Move the synthetic runtime pointer |
+| `runtime.click` | Click inside the running game viewport |
+| `runtime.type_text` | Type into the focused runtime control |
+| `runtime.capture_screenshot` | Capture a runtime viewport screenshot |
 | `info.project` | Get project information |
 | `info.errors` | Get runtime errors |
 | `info.output` | Get console output |
@@ -372,6 +396,11 @@ Once configured, you can ask your AI assistant:
 - "Run the main scene and show me any errors"
 - "Select the Player node in the editor"
 
+### Runtime Automation
+- "Run the scene, tap jump, and tell me if the player leaves the ground"
+- "Click the Play button and capture a screenshot to `tmp/menu.png`"
+- "Type a player name into the focused LineEdit"
+
 ### Documentation
 - "Show me the CharacterBody2D documentation"
 - "Search the docs for 'collision'"
@@ -405,7 +434,16 @@ Once configured, you can ask your AI assistant:
 4. godot_editor_get_errors - Review any errors
 ```
 
-### 4. Generate Procedural Content
+### 4. Automate a Runtime Check
+```
+1. godot_connect - Connect to Godot
+2. godot_editor_run_scene - Start the game in debug mode
+3. godot_runtime_status - Confirm the runtime harness is ready
+4. godot_runtime_tap_action / godot_runtime_click - Drive gameplay or UI
+5. godot_runtime_capture_screenshot - Save visual evidence when needed
+```
+
+### 5. Generate Procedural Content
 ```
 1. godot_generate_dungeon - Create dungeon layout
 2. godot_generate_tilemap_pattern - Add tile patterns

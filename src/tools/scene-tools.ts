@@ -12,6 +12,12 @@ import {
   resolveProjectDirectory,
   resolveProjectPath,
 } from "../utils/path-utils.js";
+import {
+  assertSceneParentExists,
+  buildSceneNodePath,
+  normalizeSceneNodePath,
+  sceneHasNodePath,
+} from "../utils/scene-path-utils.js";
 
 export function registerSceneTools(
   tools: Map<string, ToolHandler>,
@@ -176,8 +182,16 @@ export function registerSceneTools(
 
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
+      const normalizedParent = assertSceneParentExists(scene, node.parent);
+      const addedPath = buildSceneNodePath(normalizedParent, node.name);
+      if (sceneHasNodePath(scene, addedPath)) {
+        throw new Error(`Node already exists: ${addedPath}`);
+      }
 
-      TscnParser.addNode(scene, node);
+      TscnParser.addNode(scene, {
+        ...node,
+        parent: normalizedParent,
+      });
 
       const newContent = TscnParser.serialize(scene);
       await fs.writeFile(fullPath, newContent, "utf-8");
@@ -185,6 +199,7 @@ export function registerSceneTools(
       return {
         success: true,
         addedNode: node.name,
+        addedPath,
         totalNodes: scene.nodes.length,
       };
     },
@@ -212,15 +227,16 @@ export function registerSceneTools(
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
       const beforeCount = scene.nodes.length;
+      const normalizedNodePath = normalizeSceneNodePath(scene, nodePath);
 
-      TscnParser.removeNode(scene, nodePath);
+      TscnParser.removeNode(scene, normalizedNodePath);
 
       const newContent = TscnParser.serialize(scene);
       await fs.writeFile(fullPath, newContent, "utf-8");
 
       return {
         success: true,
-        removedPath: nodePath,
+        removedPath: normalizedNodePath,
         nodesRemoved: beforeCount - scene.nodes.length,
       };
     },
@@ -252,8 +268,9 @@ export function registerSceneTools(
 
       const content = await fs.readFile(fullPath, "utf-8");
       const scene = TscnParser.parse(content);
+      const normalizedNodePath = normalizeSceneNodePath(scene, nodePath);
 
-      const success = TscnParser.modifyNode(scene, nodePath, updates);
+      const success = TscnParser.modifyNode(scene, normalizedNodePath, updates);
       if (!success) {
         throw new Error(`Node not found: ${nodePath}`);
       }
@@ -263,7 +280,7 @@ export function registerSceneTools(
 
       return {
         success: true,
-        modifiedPath: nodePath,
+        modifiedPath: normalizedNodePath,
         updates,
       };
     },

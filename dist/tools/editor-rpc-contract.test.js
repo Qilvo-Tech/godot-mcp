@@ -8,6 +8,11 @@ function readProjectFile(relativePath) {
     return fs.readFileSync(path.join(process.cwd(), relativePath), "utf-8");
 }
 describe("editor RPC contract", () => {
+    it("uses a statically typed execute wrapper for strict-typing projects", () => {
+        const pluginHandler = readProjectFile("addons/godot_ai_bridge/message_handler.gd");
+        expect(pluginHandler).toContain("func __mcp_exec(editor_interface: Variant, message_handler: Variant) -> Variant:");
+        expect(pluginHandler).toContain("var runner: Object = temp_script.new()");
+    });
     it("keeps editor tool RPC methods in sync with plugin dispatch", () => {
         const editorTools = readProjectFile("src/tools/editor-tools.ts");
         const pluginHandler = readProjectFile("addons/godot_ai_bridge/message_handler.gd");
@@ -18,6 +23,10 @@ describe("editor RPC contract", () => {
         const dispatchedMethods = uniqueSorted([...dispatchBlock.matchAll(/^\s*"([^"]+)":\s*$/gm)].map((match) => match[1]));
         const missingInPlugin = sentMethods.filter((method) => !dispatchedMethods.includes(method));
         expect(missingInPlugin).toEqual([]);
+    });
+    it("records the active bridge port after a successful connection", () => {
+        const editorTools = readProjectFile("src/tools/editor-tools.ts");
+        expect(editorTools).toContain("state.editorPort = port;");
     });
     it("documents all plugin RPC methods in README", () => {
         const readme = readProjectFile("README.md");

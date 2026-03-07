@@ -48,6 +48,12 @@ describe("editor RPC contract", () => {
     expect(missingInPlugin).toEqual([]);
   });
 
+  it("records the active bridge port after a successful connection", () => {
+    const editorTools = readProjectFile("src/tools/editor-tools.ts");
+
+    expect(editorTools).toContain("state.editorPort = port;");
+  });
+
   it("documents all plugin RPC methods in README", () => {
     const readme = readProjectFile("README.md");
     const pluginHandler = readProjectFile("addons/godot_ai_bridge/message_handler.gd");

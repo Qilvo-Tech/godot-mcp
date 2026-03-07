@@ -4,6 +4,7 @@ extends RefCounted
 
 var editor_interface: EditorInterface
 var undo_redo: EditorUndoRedoManager
+var debugger_plugin: Object
 var output_buffer: Array[Dictionary] = []
 var error_buffer: Array[Dictionary] = []
 const MAX_OUTPUT_LINES: int = 500
@@ -33,7 +34,7 @@ func handle_message(message: String) -> String:
 	if not params is Dictionary:
 		params = {}
 
-	var result = _dispatch(method, params)
+	var result = await _dispatch(method, params)
 
 	if result.has("error"):
 		return _error_response(id, result["error"]["code"], result["error"]["message"])
@@ -63,6 +64,24 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 			return _handle_stop_scene(params)
 		"info.project":
 			return _handle_get_project_info(params)
+		"runtime.status":
+			return await _handle_runtime_status(params)
+		"runtime.wait":
+			return await _handle_runtime_wait(params)
+		"runtime.press_action":
+			return await _handle_runtime_press_action(params)
+		"runtime.release_action":
+			return await _handle_runtime_release_action(params)
+		"runtime.tap_action":
+			return await _handle_runtime_tap_action(params)
+		"runtime.mouse_move":
+			return await _handle_runtime_mouse_move(params)
+		"runtime.click":
+			return await _handle_runtime_click(params)
+		"runtime.type_text":
+			return await _handle_runtime_type_text(params)
+		"runtime.capture_screenshot":
+			return await _handle_runtime_capture_screenshot(params)
 		"fs.refresh":
 			return _handle_refresh_filesystem(params)
 		"info.errors":
@@ -85,7 +104,7 @@ func _handle_initialize(_params: Dictionary) -> Dictionary:
 			"server": "godot-ai-bridge",
 			"godot_version": Engine.get_version_info().string,
 			"project": ProjectSettings.get_setting("application/config/name"),
-			"capabilities": ["scene_tree", "editor"]
+			"capabilities": ["scene_tree", "editor", "runtime"]
 		}
 	}
 
@@ -140,11 +159,7 @@ func _handle_add_node(params: Dictionary) -> Dictionary:
 	if not edited_scene:
 		return {"error": {"code": -32603, "message": "No scene open"}}
 
-	var parent: Node
-	if parent_path == "." or parent_path.is_empty():
-		parent = edited_scene
-	else:
-		parent = edited_scene.get_node_or_null(parent_path)
+	var parent = _resolve_scene_node(parent_path, edited_scene)
 
 	if not parent:
 		return {"error": {"code": -32603, "message": "Parent not found: " + parent_path}}
@@ -175,7 +190,7 @@ func _handle_add_node(params: Dictionary) -> Dictionary:
 	return {
 		"result": {
 			"added": node_name,
-			"path": str(new_node.get_path()),
+			"path": _scene_tree_path_for(new_node, edited_scene),
 			"applied_properties": applied_properties
 		}
 	}
@@ -190,7 +205,7 @@ func _handle_remove_node(params: Dictionary) -> Dictionary:
 	if not edited_scene:
 		return {"error": {"code": -32603, "message": "No scene open"}}
 
-	var node = edited_scene.get_node_or_null(path)
+	var node = _resolve_scene_node(path, edited_scene)
 	if not node:
 		return {"error": {"code": -32603, "message": "Node not found: " + path}}
 
@@ -198,6 +213,7 @@ func _handle_remove_node(params: Dictionary) -> Dictionary:
 		return {"error": {"code": -32603, "message": "Cannot remove scene root"}}
 
 	var parent = node.get_parent()
+	var scene_path := _scene_tree_path_for(node, edited_scene)
 
 	undo_redo.create_action("Remove Node: " + node.name)
 	undo_redo.add_do_method(parent, "remove_child", node)
@@ -206,7 +222,7 @@ func _handle_remove_node(params: Dictionary) -> Dictionary:
 	undo_redo.add_undo_reference(node)
 	undo_redo.commit_action()
 
-	return {"result": {"removed": path}}
+	return {"result": {"removed": scene_path}}
 
 
 func _handle_modify_node(params: Dictionary) -> Dictionary:
@@ -220,11 +236,12 @@ func _handle_modify_node(params: Dictionary) -> Dictionary:
 	if not edited_scene:
 		return {"error": {"code": -32603, "message": "No scene open"}}
 
-	var node = edited_scene.get_node_or_null(path)
+	var node = _resolve_scene_node(path, edited_scene)
 	if not node:
 		return {"error": {"code": -32603, "message": "Node not found: " + path}}
 
 	var modified: Array = []
+	var scene_path := _scene_tree_path_for(node, edited_scene)
 
 	undo_redo.create_action("Modify Node: " + node.name)
 
@@ -238,7 +255,7 @@ func _handle_modify_node(params: Dictionary) -> Dictionary:
 
 	undo_redo.commit_action()
 
-	return {"result": {"modified": modified, "path": path}}
+	return {"result": {"modified": modified, "path": scene_path}}
 
 
 func _convert_value(value):
@@ -295,6 +312,100 @@ func _handle_get_project_info(_params: Dictionary) -> Dictionary:
 func _handle_refresh_filesystem(_params: Dictionary) -> Dictionary:
 	editor_interface.get_resource_filesystem().scan()
 	return {"result": {"refreshed": true}}
+
+
+func _handle_runtime_status(_params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("status", {})
+
+
+func _handle_runtime_wait(params: Dictionary) -> Dictionary:
+	var request_params: Dictionary = {}
+	if params.has("frames"):
+		request_params["frames"] = int(params.get("frames", 0))
+	if params.has("seconds"):
+		request_params["seconds"] = float(params.get("seconds", 0.0))
+	return await _send_runtime_request("wait", request_params)
+
+
+func _handle_runtime_press_action(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("press_action", {
+		"action": str(params.get("action", "")),
+		"strength": float(params.get("strength", 1.0))
+	})
+
+
+func _handle_runtime_release_action(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("release_action", {
+		"action": str(params.get("action", ""))
+	})
+
+
+func _handle_runtime_tap_action(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("tap_action", {
+		"action": str(params.get("action", "")),
+		"frames": int(params.get("frames", 1)),
+		"strength": float(params.get("strength", 1.0))
+	})
+
+
+func _handle_runtime_mouse_move(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("mouse_move", {
+		"x": float(params.get("x", 0.0)),
+		"y": float(params.get("y", 0.0))
+	})
+
+
+func _handle_runtime_click(params: Dictionary) -> Dictionary:
+	var request_params: Dictionary = {
+		"button": int(params.get("button", MOUSE_BUTTON_LEFT)),
+		"holdFrames": int(params.get("holdFrames", 1))
+	}
+	if params.has("x"):
+		request_params["x"] = float(params.get("x", 0.0))
+	if params.has("y"):
+		request_params["y"] = float(params.get("y", 0.0))
+	return await _send_runtime_request("click", request_params)
+
+
+func _handle_runtime_type_text(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("type_text", {
+		"text": str(params.get("text", ""))
+	})
+
+
+func _handle_runtime_capture_screenshot(params: Dictionary) -> Dictionary:
+	return await _send_runtime_request("capture_screenshot", {
+		"path": str(params.get("path", ""))
+	})
+
+
+func _send_runtime_request(method: String, params: Dictionary) -> Dictionary:
+	if debugger_plugin == null:
+		return {
+			"error": {
+				"code": -32603,
+				"message": "Runtime automation bridge is unavailable."
+			}
+		}
+
+	if not debugger_plugin.has_method("send_runtime_request"):
+		return {
+			"error": {
+				"code": -32603,
+				"message": "Runtime automation transport is not installed in this AI Bridge build."
+			}
+		}
+
+	var response = await debugger_plugin.send_runtime_request(method, params)
+	if response is Dictionary:
+		return response
+
+	return {
+		"error": {
+			"code": -32603,
+			"message": "Runtime automation returned an unexpected response for %s." % method
+		}
+	}
 
 
 func _handle_execute_gdscript(params: Dictionary) -> Dictionary:
@@ -638,14 +749,53 @@ func _handle_select_node(params: Dictionary) -> Dictionary:
 	if not edited_scene:
 		return {"error": {"code": -32603, "message": "No scene open"}}
 
-	var node = edited_scene.get_node_or_null(path)
+	var node = _resolve_scene_node(path, edited_scene)
 	if not node:
 		return {"error": {"code": -32603, "message": "Node not found: " + path}}
 
 	editor_interface.get_selection().clear()
 	editor_interface.get_selection().add_node(node)
 
-	return {"result": {"selected": path}}
+	return {"result": {"selected": _scene_tree_path_for(node, edited_scene)}}
+
+
+func _resolve_scene_node(path: String, edited_scene: Node) -> Node:
+	if not edited_scene:
+		return null
+
+	var normalized_path := path.strip_edges()
+	if normalized_path.is_empty() or normalized_path == ".":
+		return edited_scene
+
+	if normalized_path == edited_scene.name:
+		return edited_scene
+
+	var direct = edited_scene.get_node_or_null(normalized_path)
+	if direct:
+		return direct
+
+	var root_prefix := edited_scene.name + "/"
+	if normalized_path.begins_with(root_prefix):
+		var relative_path := normalized_path.substr(root_prefix.length())
+		if relative_path.is_empty():
+			return edited_scene
+		return edited_scene.get_node_or_null(relative_path)
+
+	return null
+
+
+func _scene_tree_path_for(node: Node, edited_scene: Node) -> String:
+	if not node or not edited_scene:
+		return ""
+
+	if node == edited_scene:
+		return edited_scene.name
+
+	var relative_path := str(edited_scene.get_path_to(node))
+	if relative_path.is_empty() or relative_path == ".":
+		return edited_scene.name
+
+	return edited_scene.name + "/" + relative_path
 
 
 func log_output(text: String, level: String = "info", source: String = "runtime") -> void:

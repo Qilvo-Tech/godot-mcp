@@ -7,6 +7,7 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import { TscnParser } from "../parsers/tscn-parser.js";
 import { resolveProjectPath } from "../utils/path-utils.js";
+import { assertSceneParentExists, buildSceneNodePath, getSceneNodePath, normalizeSceneNodePath, sceneHasNodePath, } from "../utils/scene-path-utils.js";
 export function registerNavigationTools(tools, state) {
     tools.set("godot_navigation_list_nodes", {
         description: "List navigation nodes (regions, agents, links) in a scene with optional key properties.",
@@ -83,8 +84,9 @@ export function registerNavigationTools(tools, state) {
             const fullPath = resolveProjectPath(scenePath, state.projectPath);
             const content = await fs.readFile(fullPath, "utf-8");
             const scene = TscnParser.parse(content);
-            const nodePath = combinePath(parentPath, nodeName);
-            if (scene.nodes.some((node) => getNodePath(node) === nodePath)) {
+            const normalizedParentPath = assertSceneParentExists(scene, parentPath) ?? ".";
+            const nodePath = buildSceneNodePath(normalizedParentPath, nodeName);
+            if (sceneHasNodePath(scene, nodePath)) {
                 throw new Error(`Node already exists: ${nodePath}`);
             }
             const type = dimension === "2d" ? "NavigationRegion2D" : "NavigationRegion3D";
@@ -97,7 +99,7 @@ export function registerNavigationTools(tools, state) {
             TscnParser.addNode(scene, {
                 name: nodeName,
                 type,
-                parent: parentPath,
+                parent: normalizedParentPath,
                 properties,
             });
             await fs.writeFile(fullPath, TscnParser.serialize(scene), "utf-8");
@@ -163,8 +165,9 @@ export function registerNavigationTools(tools, state) {
             const fullPath = resolveProjectPath(scenePath, state.projectPath);
             const content = await fs.readFile(fullPath, "utf-8");
             const scene = TscnParser.parse(content);
-            const nodePath = combinePath(parentPath, nodeName);
-            if (scene.nodes.some((node) => getNodePath(node) === nodePath)) {
+            const normalizedParentPath = assertSceneParentExists(scene, parentPath) ?? ".";
+            const nodePath = buildSceneNodePath(normalizedParentPath, nodeName);
+            if (sceneHasNodePath(scene, nodePath)) {
                 throw new Error(`Node already exists: ${nodePath}`);
             }
             const type = dimension === "2d" ? "NavigationAgent2D" : "NavigationAgent3D";
@@ -180,7 +183,7 @@ export function registerNavigationTools(tools, state) {
             TscnParser.addNode(scene, {
                 name: nodeName,
                 type,
-                parent: parentPath,
+                parent: normalizedParentPath,
                 properties,
             });
             await fs.writeFile(fullPath, TscnParser.serialize(scene), "utf-8");
@@ -242,8 +245,9 @@ export function registerNavigationTools(tools, state) {
             const fullPath = resolveProjectPath(scenePath, state.projectPath);
             const content = await fs.readFile(fullPath, "utf-8");
             const scene = TscnParser.parse(content);
-            const nodePath = combinePath(parentPath, nodeName);
-            if (scene.nodes.some((node) => getNodePath(node) === nodePath)) {
+            const normalizedParentPath = assertSceneParentExists(scene, parentPath) ?? ".";
+            const nodePath = buildSceneNodePath(normalizedParentPath, nodeName);
+            if (sceneHasNodePath(scene, nodePath)) {
                 throw new Error(`Node already exists: ${nodePath}`);
             }
             const type = dimension === "2d" ? "NavigationLink2D" : "NavigationLink3D";
@@ -257,7 +261,7 @@ export function registerNavigationTools(tools, state) {
             TscnParser.addNode(scene, {
                 name: nodeName,
                 type,
-                parent: parentPath,
+                parent: normalizedParentPath,
                 properties,
             });
             await fs.writeFile(fullPath, TscnParser.serialize(scene), "utf-8");
@@ -298,22 +302,25 @@ export function registerNavigationTools(tools, state) {
             const fullPath = resolveProjectPath(scenePath, state.projectPath);
             const content = await fs.readFile(fullPath, "utf-8");
             const scene = TscnParser.parse(content);
-            const node = scene.nodes.find((entry) => getNodePath(entry) === nodePath);
+            const normalizedNodePath = normalizeSceneNodePath(scene, nodePath);
+            const node = scene.nodes.find((entry) => getSceneNodePath(entry) === normalizedNodePath);
             if (!node) {
                 throw new Error(`Node not found: ${nodePath}`);
             }
             if (!isRegionType(node.type)) {
-                throw new Error(`Node '${nodePath}' is not a NavigationRegion node (found '${node.type || "unknown"}')`);
+                throw new Error(`Node '${normalizedNodePath}' is not a NavigationRegion node (found '${node.type || "unknown"}')`);
             }
-            const success = TscnParser.modifyNode(scene, nodePath, { properties: updates });
+            const success = TscnParser.modifyNode(scene, normalizedNodePath, {
+                properties: updates,
+            });
             if (!success) {
-                throw new Error(`Failed to update node: ${nodePath}`);
+                throw new Error(`Failed to update node: ${normalizedNodePath}`);
             }
             await fs.writeFile(fullPath, TscnParser.serialize(scene), "utf-8");
             return {
                 success: true,
                 scenePath,
-                nodePath,
+                nodePath: normalizedNodePath,
                 updatedProperties: Object.keys(updates),
             };
         },
@@ -359,22 +366,25 @@ export function registerNavigationTools(tools, state) {
             const fullPath = resolveProjectPath(scenePath, state.projectPath);
             const content = await fs.readFile(fullPath, "utf-8");
             const scene = TscnParser.parse(content);
-            const node = scene.nodes.find((entry) => getNodePath(entry) === nodePath);
+            const normalizedNodePath = normalizeSceneNodePath(scene, nodePath);
+            const node = scene.nodes.find((entry) => getSceneNodePath(entry) === normalizedNodePath);
             if (!node) {
                 throw new Error(`Node not found: ${nodePath}`);
             }
             if (!isAgentType(node.type)) {
-                throw new Error(`Node '${nodePath}' is not a NavigationAgent node (found '${node.type || "unknown"}')`);
+                throw new Error(`Node '${normalizedNodePath}' is not a NavigationAgent node (found '${node.type || "unknown"}')`);
             }
-            const success = TscnParser.modifyNode(scene, nodePath, { properties: updates });
+            const success = TscnParser.modifyNode(scene, normalizedNodePath, {
+                properties: updates,
+            });
             if (!success) {
-                throw new Error(`Failed to update node: ${nodePath}`);
+                throw new Error(`Failed to update node: ${normalizedNodePath}`);
             }
             await fs.writeFile(fullPath, TscnParser.serialize(scene), "utf-8");
             return {
                 success: true,
                 scenePath,
-                nodePath,
+                nodePath: normalizedNodePath,
                 updatedProperties: Object.keys(updates),
             };
         },
@@ -426,7 +436,8 @@ export function registerNavigationTools(tools, state) {
             const descriptors = scene.nodes
                 .map((node) => toNavigationDescriptor(node))
                 .filter((entry) => entry !== null);
-            const report = validateNavigationPathSetup(descriptors, agentNodePaths);
+            const normalizedAgentNodePaths = agentNodePaths?.map((nodePath) => normalizeSceneNodePath(scene, nodePath));
+            const report = validateNavigationPathSetup(descriptors, normalizedAgentNodePaths);
             if (strict && report.errors.length > 0) {
                 throw new Error(`Navigation validation failed: ${report.errors.join("; ")}`);
             }
@@ -535,7 +546,7 @@ export function toNavigationDescriptor(node) {
     if (!typeInfo)
         return null;
     const base = {
-        nodePath: getNodePath(node),
+        nodePath: getSceneNodePath(node),
         type: node.type || "",
         kind: typeInfo.kind,
         dimension: typeInfo.dimension,
@@ -595,16 +606,6 @@ function isRegionType(type) {
 }
 function isAgentType(type) {
     return type === "NavigationAgent2D" || type === "NavigationAgent3D";
-}
-function getNodePath(node) {
-    if (!node.parent || node.parent === ".")
-        return node.name;
-    return `${node.parent}/${node.name}`;
-}
-function combinePath(parentPath, nodeName) {
-    if (parentPath === ".")
-        return nodeName;
-    return `${parentPath}/${nodeName}`;
 }
 function stripUndefined(input) {
     return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));

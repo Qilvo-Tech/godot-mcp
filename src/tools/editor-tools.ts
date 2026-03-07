@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import WebSocket from "ws";
+import * as path from "path";
 import type { ToolHandler, ServerState } from "../index.js";
 
 // WebSocket connection state
@@ -484,6 +485,219 @@ export function registerEditorTools(
       return result;
     },
   });
+
+  tools.set("godot_runtime_status", {
+    description:
+      "Get runtime automation harness status and viewport metadata from the currently running game.",
+    inputSchema: z.object({}),
+    handler: async () => {
+      ensureConnected();
+      const result = await sendRequest("runtime.status", {});
+      return result;
+    },
+  });
+
+  tools.set("godot_runtime_wait", {
+    description:
+      "Wait for a number of frames or seconds in the running game before continuing. If omitted, waits for one frame.",
+    inputSchema: z.object({
+      frames: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Number of process frames to wait"),
+      seconds: z
+        .number()
+        .nonnegative()
+        .optional()
+        .describe("Wall-clock seconds to wait in the running game"),
+    }),
+    handler: async (args) => {
+      ensureConnected();
+      const { frames, seconds } = args as { frames?: number; seconds?: number };
+
+      const result = await sendRequest("runtime.wait", {
+        frames,
+        seconds,
+      });
+      return result;
+    },
+  });
+
+  tools.set("godot_runtime_press_action", {
+    description:
+      "Press and hold an InputMap action in the running game until a matching release call.",
+    inputSchema: z.object({
+      action: z.string().describe("InputMap action name to press"),
+      strength: z
+        .number()
+        .optional()
+        .default(1.0)
+        .describe("Optional action strength (default: 1.0)"),
+    }),
+    handler: async (args) => {
+      ensureConnected();
+      const { action, strength = 1.0 } = args as {
+        action: string;
+        strength?: number;
+      };
+
+      const result = await sendRequest("runtime.press_action", {
+        action,
+        strength,
+      });
+      return result;
+    },
+  });
+
+  tools.set("godot_runtime_release_action", {
+    description: "Release a previously pressed InputMap action in the running game.",
+    inputSchema: z.object({
+      action: z.string().describe("InputMap action name to release"),
+    }),
+    handler: async (args) => {
+      ensureConnected();
+      const { action } = args as { action: string };
+
+      const result = await sendRequest("runtime.release_action", { action });
+      return result;
+    },
+  });
+
+  tools.set("godot_runtime_tap_action", {
+    description:
+      "Tap an InputMap action for a small number of frames in the running game.",
+    inputSchema: z.object({
+      action: z.string().describe("InputMap action name to tap"),
+      frames: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .default(1)
+        .describe("How many frames to hold the action before release"),
+      strength: z
+        .number()
+        .optional()
+        .default(1.0)
+        .describe("Optional action strength (default: 1.0)"),
+    }),
+    handler: async (args) => {
+      ensureConnected();
+      const { action, frames = 1, strength = 1.0 } = args as {
+        action: string;
+        frames?: number;
+        strength?: number;
+      };
+
+      const result = await sendRequest("runtime.tap_action", {
+        action,
+        frames,
+        strength,
+      });
+      return result;
+    },
+  });
+
+  tools.set("godot_runtime_mouse_move", {
+    description:
+      "Move the synthetic pointer inside the running game viewport using viewport-local coordinates.",
+    inputSchema: z.object({
+      x: z.number().describe("Viewport-local X coordinate"),
+      y: z.number().describe("Viewport-local Y coordinate"),
+    }),
+    handler: async (args) => {
+      ensureConnected();
+      const { x, y } = args as { x: number; y: number };
+
+      const result = await sendRequest("runtime.mouse_move", { x, y });
+      return result;
+    },
+  });
+
+  tools.set("godot_runtime_click", {
+    description:
+      "Send a mouse click into the running game viewport, optionally moving first.",
+    inputSchema: z
+      .object({
+        x: z.number().optional().describe("Optional viewport-local X coordinate"),
+        y: z.number().optional().describe("Optional viewport-local Y coordinate"),
+        button: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .default(1)
+          .describe("Mouse button index (default: 1 for left click)"),
+        holdFrames: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .default(1)
+          .describe("How many frames to hold the button before release"),
+      })
+      .refine(
+        (value) =>
+          (value.x === undefined && value.y === undefined) ||
+          (value.x !== undefined && value.y !== undefined),
+        { message: "Provide both x and y, or neither." }
+      ),
+    handler: async (args) => {
+      ensureConnected();
+      const { x, y, button = 1, holdFrames = 1 } = args as {
+        x?: number;
+        y?: number;
+        button?: number;
+        holdFrames?: number;
+      };
+
+      const result = await sendRequest("runtime.click", {
+        x,
+        y,
+        button,
+        holdFrames,
+      });
+      return result;
+    },
+  });
+
+  tools.set("godot_runtime_type_text", {
+    description:
+      "Type text into the currently focused Control in the running game.",
+    inputSchema: z.object({
+      text: z.string().describe("Text to push into the focused control"),
+    }),
+    handler: async (args) => {
+      ensureConnected();
+      const { text } = args as { text: string };
+
+      const result = await sendRequest("runtime.type_text", { text });
+      return result;
+    },
+  });
+
+  tools.set("godot_runtime_capture_screenshot", {
+    description:
+      "Capture the running game viewport to a PNG file and return the resolved path plus image size.",
+    inputSchema: z.object({
+      path: z
+        .string()
+        .describe(
+          "Output path. Supports absolute paths plus res://, user://, or project-relative paths."
+        ),
+    }),
+    handler: async (args) => {
+      ensureConnected();
+      const { path: screenshotPath } = args as { path: string };
+
+      const result = await sendRequest("runtime.capture_screenshot", {
+        path: normalizeRuntimeArtifactPath(screenshotPath, state.projectPath),
+      });
+      return result;
+    },
+  });
 }
 
 // Helper functions
@@ -517,6 +731,7 @@ async function connectToGodot(
       wsConnection.on("open", async () => {
         clearTimeout(timeout);
         state.editorConnected = true;
+        state.editorPort = port;
 
         // Send initialization message
         try {
@@ -578,6 +793,23 @@ async function connectToGodot(
       reject(error);
     }
   });
+}
+
+function normalizeRuntimeArtifactPath(
+  inputPath: string,
+  projectPath: string | null
+): string {
+  const trimmed = inputPath.trim();
+  if (
+    trimmed.startsWith("res://") ||
+    trimmed.startsWith("user://") ||
+    path.isAbsolute(trimmed) ||
+    projectPath === null
+  ) {
+    return trimmed;
+  }
+
+  return path.resolve(projectPath, trimmed);
 }
 
 async function sendRequest(

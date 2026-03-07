@@ -419,9 +419,12 @@ const TOOL_GUIDE = {
       tools: {
         godot_read_scene: "Parse and inspect a scene file's structure",
         godot_write_scene: "Create or overwrite a scene file",
-        godot_add_node: "Add a new node to an existing scene",
-        godot_remove_node: "Remove a node from a scene",
-        godot_modify_node: "Change node properties (position, scale, etc.)",
+        godot_add_node:
+          "Add a new node to an existing scene (accepts root-prefixed or root-relative paths)",
+        godot_remove_node:
+          "Remove a node from a scene (accepts root-prefixed or root-relative paths)",
+        godot_modify_node:
+          "Change node properties (position, scale, etc.; accepts root-prefixed or root-relative paths)",
         godot_list_scene_nodes: "List all nodes in a scene hierarchically",
         godot_validate_scene: "Check scene for structural errors",
         godot_list_scenes: "Find all .tscn files in the project",
@@ -473,11 +476,22 @@ const TOOL_GUIDE = {
         godot_editor_execute_gdscript: "Execute GDScript inside editor context",
         godot_editor_get_project_info: "Get project path/name/version details",
         godot_editor_refresh_filesystem: "Trigger editor filesystem rescan",
+        godot_runtime_status: "Inspect runtime automation harness status",
+        godot_runtime_wait:
+          "Wait for frames or seconds inside the running game (defaults to one frame)",
+        godot_runtime_press_action: "Press and hold an InputMap action in the running game",
+        godot_runtime_release_action: "Release a pressed InputMap action in the running game",
+        godot_runtime_tap_action: "Tap an InputMap action for a few frames",
+        godot_runtime_mouse_move: "Move the synthetic runtime pointer",
+        godot_runtime_click: "Click inside the running game viewport",
+        godot_runtime_type_text: "Type into the focused runtime control",
+        godot_runtime_capture_screenshot: "Capture the running game viewport to PNG",
       },
       whenToUse: [
         "Iterating quickly with visual feedback",
         "Testing changes immediately",
         "Debugging with live inspection",
+        "Automating repeatable runtime checks",
         "Collaborative editing sessions",
       ],
       prerequisite: "Must install AI Bridge plugin and call godot_connect first",
@@ -706,6 +720,13 @@ const TOOL_GUIDE = {
       "3. godot_editor_add_node / godot_editor_modify_node - Make changes",
       "4. godot_editor_run_scene - Test immediately",
     ],
+    "Runtime automation session": [
+      "1. godot_connect - Connect to Godot editor",
+      "2. godot_editor_run_scene - Start a debug session",
+      "3. godot_runtime_status - Confirm the runtime harness is available",
+      "4. godot_runtime_tap_action / godot_runtime_click - Drive interactions",
+      "5. godot_runtime_capture_screenshot - Save visual evidence when needed",
+    ],
     "Generate a level": [
       "1. godot_generate_dungeon - Create room layout",
       "2. godot_write_scene - Save as scene file",
@@ -786,6 +807,26 @@ const COVERAGE_GUIDE = {
       priority: "medium",
       tools: ["godot_connect", "godot_editor_*"],
       gaps: ["Subscription/event streaming", "Richer querying/filtering"],
+    },
+    {
+      subsystem: "Runtime automation and screenshots",
+      coverage: "partial",
+      priority: "high",
+      tools: [
+        "godot_runtime_status",
+        "godot_runtime_wait",
+        "godot_runtime_press_action",
+        "godot_runtime_release_action",
+        "godot_runtime_tap_action",
+        "godot_runtime_mouse_move",
+        "godot_runtime_click",
+        "godot_runtime_type_text",
+        "godot_runtime_capture_screenshot",
+      ],
+      gaps: [
+        "Project-specific state snapshots and reset hooks",
+        "Drag-and-drop, multi-window focus, and richer pointer semantics",
+      ],
     },
     {
       subsystem: "GDScript workflows",
@@ -962,7 +1003,7 @@ function getToolPrerequisites(toolName: string): string[] {
     );
   }
 
-  if (toolName.startsWith("godot_editor_")) {
+  if (toolName.startsWith("godot_editor_") || toolName.startsWith("godot_runtime_")) {
     requirements.push("A successful `godot_connect` call in the current session.");
   }
 
@@ -1091,7 +1132,7 @@ function buildToolTemplate(toolName: string, tool: ToolHandler): Record<string, 
   const inputs = describeToolInputs(tool.inputSchema);
   const constraints: string[] = [];
 
-  if (!toolName.startsWith("godot_editor_") && toolName !== "godot_connect" && toolName !== "godot_disconnect" && toolName !== "godot_connection_status") {
+  if (!usesEditorBridgeTool(toolName)) {
     constraints.push("Filesystem paths are restricted to the configured project root.");
   }
 
@@ -1308,6 +1349,32 @@ export function registerDocsTools(
         if (taskLower.includes("live") || taskLower.includes("editor") || taskLower.includes("real-time")) {
           suggestions.push({ tool: "godot_connect", reason: "Connect to Godot editor first" });
           suggestions.push({ tool: "godot_editor_get_scene_tree", reason: "Inspect live scene" });
+        }
+
+        if (
+          taskLower.includes("runtime") ||
+          taskLower.includes("screenshot") ||
+          taskLower.includes("click") ||
+          taskLower.includes("tap") ||
+          taskLower.includes("input") ||
+          taskLower.includes("type text") ||
+          taskLower.includes("automate")
+        ) {
+          suggestions.push({ tool: "godot_connect", reason: "Connect to Godot editor first" });
+          suggestions.push({ tool: "godot_editor_run_scene", reason: "Start a runtime debug session" });
+          suggestions.push({ tool: "godot_runtime_status", reason: "Confirm the runtime automation harness is available" });
+          if (taskLower.includes("screenshot")) {
+            suggestions.push({ tool: "godot_runtime_capture_screenshot", reason: "Capture the running game viewport to disk" });
+          }
+          if (taskLower.includes("click") || taskLower.includes("mouse")) {
+            suggestions.push({ tool: "godot_runtime_click", reason: "Send pointer clicks into the running game" });
+          }
+          if (taskLower.includes("tap") || taskLower.includes("press") || taskLower.includes("jump")) {
+            suggestions.push({ tool: "godot_runtime_tap_action", reason: "Drive InputMap gameplay actions in the running game" });
+          }
+          if (taskLower.includes("type")) {
+            suggestions.push({ tool: "godot_runtime_type_text", reason: "Type into the focused runtime control" });
+          }
         }
 
         if (taskLower.includes("project") || taskLower.includes("init") || taskLower.includes("setup")) {
