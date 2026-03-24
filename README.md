@@ -1,8 +1,18 @@
 # Godot MCP Server
 
-MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. Provides **99 tools** across 13 categories for scene manipulation, script generation, shader creation, animation workflows, InputMap control setup, audio routing/player setup, navigation setup, UI building, procedural generation, project setup, live editor control, and runtime automation.
+`godot-mcp` is an MCP (Model Context Protocol) server for AI-assisted Godot 4.x development. It gives AI clients a structured way to inspect and change Godot projects instead of guessing at `.tscn`, `.gd`, `.gdshader`, `.tres`, or `project.godot` formats.
 
-> **Recommended:** For the best experience, pair this MCP with the [Godot Claude Skills](https://github.com/alexmeckes/godot-claude-skills) plugin. The MCP provides **tools** (read/write/edit capabilities) while the skills provide **knowledge** (GDScript best practices, scene design patterns, shader techniques). Together they give Claude deep Godot expertise.
+It exposes **99 tools** across 13 categories for scene manipulation, script generation, shader creation, animation workflows, InputMap setup, audio routing/player setup, navigation setup, UI building, procedural generation, project setup, live editor control, and runtime automation.
+
+## How It Fits Together
+
+| Piece | Role |
+|------|------|
+| `godot-mcp` | The MCP server in this repo. Exposes the tool surface your AI client can call. |
+| `addons/godot_ai_bridge` | Optional Godot plugin bundled in this repo. Required for live editor control, runtime input automation, and screenshots. |
+| [`godot-claude-skills`](https://github.com/alexmeckes/godot-claude-skills) | Optional companion skill pack. Adds knowledge and workflow layers for code generation, scene design, shaders, and live Godot work. Includes the advanced `godot-interactive` skill for persistent editor/runtime loops. |
+
+> **Recommended companion:** Pair this MCP with [`godot-claude-skills`](https://github.com/alexmeckes/godot-claude-skills). `godot-mcp` provides the tools. The skill pack improves how an agent uses them, especially through its `godot-interactive` workflow.
 
 ## Features
 
@@ -33,30 +43,31 @@ MCP (Model Context Protocol) server for AI-assisted Godot 4.x game development. 
 
 ## Quick Start
 
-**Not sure which tool to use?** Call `godot_help` first:
+1. Build the MCP server from source.
+2. Point your MCP client at `dist/index.js` and pass `--project /path/to/your/godot/project`.
+3. If you want live editor tools, copy `addons/godot_ai_bridge` into your Godot project and enable the plugin.
+4. Start with `godot_help`, then connect to the editor if needed.
 
-```
-godot_help                           # Overview of all 90 tools
-godot_help tool="godot_write_scene" # Standardized inputs/constraints/output template
-godot_help category="coverage"      # Coverage matrix + prioritized roadmap
-godot_help category="animation"     # Animation clip and scene animation tools
-godot_help category="input"         # InputMap actions, bindings, and presets
-godot_help category="audio"         # Bus layout and AudioStreamPlayer tools
-godot_help category="navigation"    # Navigation region/agent/link setup tools
-godot_help category="scenes"         # Scene manipulation tools
-godot_help category="ui"             # UI creation tools
-godot_help task="create a menu"      # Get suggestions for a task
+If you only want file-based scene/script/resource editing, you can skip the AI Bridge plugin and use the file tools directly.
+
+If you are also using [`godot-claude-skills`](https://github.com/alexmeckes/godot-claude-skills), prefer its `godot-interactive` skill for persistent inspect/edit/run/debug loops over `godot-mcp`.
+
+```bash
+# Start here for tool discovery
+godot_help                           # Overview of all 99 tools
+godot_help tool="godot_write_scene"  # Usage template for one tool
+godot_help task="create a menu"      # Suggested tool chain for a task
 godot_help category="workflows"      # Common multi-step workflows
+
+# If the Godot editor is running with AI Bridge enabled
+godot_connect
+godot_editor_get_project_info
+godot_editor_get_scene_tree
 ```
 
 ## Installation
 
-### Option 1: From npm (when published)
-```bash
-npm install -g @genai-gametools/godot-mcp
-```
-
-### Option 2: From Source
+### Option 1: From Source
 ```bash
 git clone https://github.com/alexmeckes/godot-mcp.git
 cd godot-mcp
@@ -64,7 +75,14 @@ npm install
 npm run build
 ```
 
+### Option 2: From npm (when published)
+```bash
+npm install -g @genai-gametools/godot-mcp
+```
+
 ## Configuration
+
+Any MCP client that can launch a local process can run this server. The example below uses Claude Code / Claude Desktop.
 
 ### Claude Code / Claude Desktop
 
@@ -99,7 +117,7 @@ Options:
 
 ## Coverage Roadmap
 
-See `docs/COVERAGE_MATRIX.md` for:
+See [docs/COVERAGE_MATRIX.md](docs/COVERAGE_MATRIX.md) for:
 - current subsystem coverage (`Strong`/`Partial`/`Minimal`/`Missing`)
 - high-impact gaps
 - phased implementation priorities
