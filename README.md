@@ -125,7 +125,7 @@ See [docs/COVERAGE_MATRIX.md](docs/COVERAGE_MATRIX.md) for:
 
 ---
 
-## All 99 Tools
+## All 100 Tools
 
 ### Scene Tools (8 tools)
 
@@ -259,7 +259,7 @@ File-based scene tools accept either scene-root-relative paths like `UI/Label` o
 | `godot_search_docs` | Search documentation by keyword |
 | `godot_list_documented_classes` | List all documented classes by category |
 
-### Editor Tools (27 tools - Requires Plugin)
+### Editor Tools (28 tools - Requires Plugin)
 
 | Tool | Description |
 |------|-------------|
@@ -290,6 +290,7 @@ File-based scene tools accept either scene-root-relative paths like `UI/Label` o
 | `godot_runtime_type_text` | Type into the focused runtime control |
 | `godot_runtime_capture_screenshot` | Capture the running game viewport to PNG |
 | `godot_editor_refresh_filesystem` | Trigger filesystem rescan |
+| `godot_regenerate_client_bindings` | Regenerate SpacetimeDB GDScript bindings via the SpacetimeDB addon |
 
 ### Project Tools (1 tool)
 
@@ -377,6 +378,7 @@ The plugin responds to these JSON-RPC methods:
 | `info.log_file` | Read Godot's log file |
 | `execute.gdscript` | Execute GDScript in the editor context |
 | `fs.refresh` | Refresh the filesystem |
+| `spacetimedb.regenerate_bindings` | Regenerate SpacetimeDB GDScript bindings via the SpacetimeDB addon |
 
 ---
 

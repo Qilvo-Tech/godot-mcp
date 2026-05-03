@@ -94,6 +94,8 @@ func _dispatch(method: String, params: Dictionary) -> Dictionary:
 			return _handle_select_node(params)
 		"execute.gdscript":
 			return _handle_execute_gdscript(params)
+		"spacetimedb.regenerate_bindings":
+			return await _handle_spacetimedb_regenerate_bindings(params)
 		_:
 			return {"error": {"code": -32601, "message": "Method not found: " + method}}
 
@@ -481,6 +483,41 @@ func _handle_execute_gdscript(params: Dictionary) -> Dictionary:
 	var result = runner.call("__mcp_exec", editor_interface, self)
 
 	return {"result": {"executed": true, "result": result}}
+
+
+const SPACETIMEDB_PLUGIN_META_KEY := "spacetimedb_plugin"
+
+
+func _handle_spacetimedb_regenerate_bindings(_params: Dictionary) -> Dictionary:
+	var plugin: Object = Engine.get_meta(SPACETIMEDB_PLUGIN_META_KEY, null)
+	if plugin == null or not is_instance_valid(plugin):
+		return _internal_error("SpacetimeDB addon is not active. Enable 'SpacetimeDB' under Project > Plugins and reopen the project.")
+
+	if not plugin.has_method("regenerate_bindings"):
+		return _internal_error("SpacetimeDB plugin is too old to expose regenerate_bindings(). Update the addon.")
+
+	var summary: Dictionary = await plugin.regenerate_bindings()
+	if summary == null:
+		return _internal_error("SpacetimeDB plugin returned an unexpected response from regenerate_bindings().")
+
+	if bool(summary.get("success", false)):
+		return {"result": summary}
+
+	var failure_message: String = str(summary.get("error", "")).strip_edges()
+	if failure_message.is_empty():
+		var errors: Array = summary.get("errors", [])
+		if errors.is_empty():
+			failure_message = "SpacetimeDB binding regeneration did not finish (no completion marker logged)."
+		else:
+			failure_message = "SpacetimeDB binding regeneration failed: " + str(errors[errors.size() - 1])
+	return _internal_error(failure_message, summary)
+
+
+func _internal_error(message: String, data: Variant = null) -> Dictionary:
+	var err: Dictionary = {"code": -32603, "message": message}
+	if data != null:
+		err["data"] = data
+	return {"error": err}
 
 
 func _get_log_checkpoint_line() -> int:

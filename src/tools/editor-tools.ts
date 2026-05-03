@@ -473,6 +473,25 @@ export function registerEditorTools(
     },
   });
 
+  // Trigger SpacetimeDB client binding regeneration
+  tools.set("godot_regenerate_client_bindings", {
+    description:
+      "Regenerate SpacetimeDB GDScript client bindings via the SpacetimeDB editor addon. " +
+      "Equivalent to clicking 'Generate' in the SpacetimeDB dock: fetches each configured module's " +
+      "schema from the running database, rewrites res://spacetime_bindings/schema, prunes unused " +
+      "classes, and reinstalls the autoload. Requires the Godot editor to be open with the " +
+      "SpacetimeDB addon enabled and at least one module configured. Returns the generated file set " +
+      "and the per-module log output. After success the user must restart Godot for the new " +
+      "autoload/typed bindings to take effect.",
+    inputSchema: z.object({}),
+    handler: async () => {
+      ensureConnected();
+
+      const result = await sendRequest("spacetimedb.regenerate_bindings", {});
+      return result;
+    },
+  });
+
   // Refresh the filesystem in editor
   tools.set("godot_editor_refresh_filesystem", {
     description:
