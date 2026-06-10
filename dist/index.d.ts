@@ -16,6 +16,7 @@ declare const resources: Map<string, ResourceHandler>;
 interface ServerState {
     projectPath: string | null;
     editorConnected: boolean;
+    editorHost: string;
     editorPort: number;
 }
 declare const state: ServerState;

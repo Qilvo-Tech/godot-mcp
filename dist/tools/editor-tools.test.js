@@ -6,6 +6,7 @@ describe("editor tools", () => {
         registerEditorTools(tools, {
             projectPath: "/test/project",
             editorConnected: false,
+            editorHost: "127.0.0.1",
             editorPort: 6550,
         });
         const runtimeWaitTool = tools.get("godot_runtime_wait");
@@ -17,6 +18,7 @@ describe("editor tools", () => {
         registerEditorTools(tools, {
             projectPath: "/test/project",
             editorConnected: false,
+            editorHost: "127.0.0.1",
             editorPort: 6550,
         });
         const regenTool = tools.get("godot_regenerate_client_bindings");

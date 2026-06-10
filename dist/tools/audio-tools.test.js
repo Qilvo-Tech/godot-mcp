@@ -106,6 +106,7 @@ config/name="AudioGame"
         const state = {
             projectPath: process.cwd(),
             editorConnected: false,
+            editorHost: "127.0.0.1",
             editorPort: 6550,
         };
         registerAudioTools(tools, state);

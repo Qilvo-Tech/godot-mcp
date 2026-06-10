@@ -5,8 +5,8 @@
 import { z } from "zod";
 import WebSocket from "ws";
 import * as path from "path";
-// WebSocket connection state
 let wsConnection = null;
+let connectInFlight = null;
 let messageId = 0;
 const pendingRequests = new Map();
 export function registerEditorTools(tools, state) {
@@ -33,7 +33,7 @@ export function registerEditorTools(tools, state) {
                 };
             }
             try {
-                const result = await connectToGodot(host, port, state);
+                const result = await establishConnection(host, port, state);
                 return result;
             }
             catch (error) {
@@ -64,14 +64,25 @@ export function registerEditorTools(tools, state) {
     });
     // Get connection status
     tools.set("godot_connection_status", {
-        description: "Check the current connection status to the Godot editor.",
+        description: "Check the bridge connection to the Godot editor. If no socket exists in this MCP session yet, this attempts to connect before reporting — so `connected: false` means the editor/AI Bridge is actually unreachable, not merely that godot_connect hasn't been called.",
         inputSchema: z.object({}),
         handler: async () => {
+            let probeError = null;
+            if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+                try {
+                    await ensureConnected(state);
+                }
+                catch (error) {
+                    probeError =
+                        error instanceof Error ? error.message : String(error);
+                }
+            }
             const connected = wsConnection !== null && wsConnection.readyState === WebSocket.OPEN;
             return {
                 connected,
                 port: state.editorPort,
                 projectPath: state.projectPath,
+                ...(probeError === null ? {} : { hint: probeError }),
             };
         },
     });
@@ -80,7 +91,7 @@ export function registerEditorTools(tools, state) {
         description: "Get the current scene tree from the running Godot editor. Shows all nodes, their types, and hierarchy.",
         inputSchema: z.object({}),
         handler: async () => {
-            ensureConnected();
+            await ensureConnected(state);
             const result = await sendRequest("scene_tree.get", {});
             return result;
         },
@@ -94,7 +105,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Path to the node to select (e.g., 'Player' or 'Player/Sprite2D')"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { nodePath } = args;
             const result = await sendRequest("editor.select_node", { path: nodePath });
             return result;
@@ -115,7 +126,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Initial properties to set"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { parentPath, name, type, properties } = args;
             const result = await sendRequest("scene_tree.add_node", {
                 parent: parentPath,
@@ -133,7 +144,7 @@ export function registerEditorTools(tools, state) {
             nodePath: z.string().describe("Path to the node to remove"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { nodePath } = args;
             const result = await sendRequest("scene_tree.remove_node", {
                 path: nodePath,
@@ -151,7 +162,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Properties to set on the node"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { nodePath, properties } = args;
             const result = await sendRequest("scene_tree.modify_node", {
                 path: nodePath,
@@ -169,7 +180,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Path to the scene file (e.g., 'res://scenes/main.tscn')"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { scenePath } = args;
             const result = await sendRequest("editor.open_scene", { path: scenePath });
             return result;
@@ -180,7 +191,7 @@ export function registerEditorTools(tools, state) {
         description: "Save the current scene in the Godot editor.",
         inputSchema: z.object({}),
         handler: async () => {
-            ensureConnected();
+            await ensureConnected(state);
             const result = await sendRequest("editor.save_scene", {});
             return result;
         },
@@ -195,7 +206,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Optional path to a specific scene to run"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { scenePath } = args;
             const result = await sendRequest("editor.run_scene", {
                 path: scenePath,
@@ -208,7 +219,7 @@ export function registerEditorTools(tools, state) {
         description: "Stop the currently running scene in the Godot editor.",
         inputSchema: z.object({}),
         handler: async () => {
-            ensureConnected();
+            await ensureConnected(state);
             const result = await sendRequest("editor.stop_scene", {});
             return result;
         },
@@ -247,7 +258,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Clear in-memory runtime error buffer after retrieval"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { includeRuntime = true, includeScript = true, includeLogFile = true, severity = "all", query = "", logLines = 200, clear = false, } = args;
             const result = await sendRequest("info.errors", {
                 include_runtime: includeRuntime,
@@ -291,7 +302,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Clear in-memory output buffer after retrieval"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { lines = 50, level = "all", source = "all", query = "", includeMetadata = true, clear = false, } = args;
             const result = await sendRequest("info.output", {
                 lines,
@@ -330,7 +341,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Include structured line entries with severity and line numbers"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { lines = 100, filter = "all", query = "", sinceLine = 0, includeMetadata = true, } = args;
             const result = await sendRequest("info.log_file", {
                 lines,
@@ -349,7 +360,7 @@ export function registerEditorTools(tools, state) {
             code: z.string().describe("GDScript code to execute"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { code } = args;
             const result = await sendRequest("execute.gdscript", { code });
             return result;
@@ -360,7 +371,7 @@ export function registerEditorTools(tools, state) {
         description: "Get information about the currently open project in the Godot editor.",
         inputSchema: z.object({}),
         handler: async () => {
-            ensureConnected();
+            await ensureConnected(state);
             const result = await sendRequest("info.project", {});
             return result;
         },
@@ -376,7 +387,7 @@ export function registerEditorTools(tools, state) {
             "autoload/typed bindings to take effect.",
         inputSchema: z.object({}),
         handler: async () => {
-            ensureConnected();
+            await ensureConnected(state);
             const result = await sendRequest("spacetimedb.regenerate_bindings", {});
             return result;
         },
@@ -386,7 +397,7 @@ export function registerEditorTools(tools, state) {
         description: "Trigger a filesystem refresh in the Godot editor. Useful after external file changes.",
         inputSchema: z.object({}),
         handler: async () => {
-            ensureConnected();
+            await ensureConnected(state);
             const result = await sendRequest("fs.refresh", {});
             return result;
         },
@@ -395,7 +406,7 @@ export function registerEditorTools(tools, state) {
         description: "Get runtime automation harness status and viewport metadata from the currently running game.",
         inputSchema: z.object({}),
         handler: async () => {
-            ensureConnected();
+            await ensureConnected(state);
             const result = await sendRequest("runtime.status", {});
             return result;
         },
@@ -416,7 +427,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Wall-clock seconds to wait in the running game"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { frames, seconds } = args;
             const result = await sendRequest("runtime.wait", {
                 frames,
@@ -436,7 +447,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Optional action strength (default: 1.0)"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { action, strength = 1.0 } = args;
             const result = await sendRequest("runtime.press_action", {
                 action,
@@ -451,7 +462,7 @@ export function registerEditorTools(tools, state) {
             action: z.string().describe("InputMap action name to release"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { action } = args;
             const result = await sendRequest("runtime.release_action", { action });
             return result;
@@ -475,7 +486,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Optional action strength (default: 1.0)"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { action, frames = 1, strength = 1.0 } = args;
             const result = await sendRequest("runtime.tap_action", {
                 action,
@@ -492,7 +503,7 @@ export function registerEditorTools(tools, state) {
             y: z.number().describe("Viewport-local Y coordinate"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { x, y } = args;
             const result = await sendRequest("runtime.mouse_move", { x, y });
             return result;
@@ -522,7 +533,7 @@ export function registerEditorTools(tools, state) {
             .refine((value) => (value.x === undefined && value.y === undefined) ||
             (value.x !== undefined && value.y !== undefined), { message: "Provide both x and y, or neither." }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { x, y, button = 1, holdFrames = 1 } = args;
             const result = await sendRequest("runtime.click", {
                 x,
@@ -539,7 +550,7 @@ export function registerEditorTools(tools, state) {
             text: z.string().describe("Text to push into the focused control"),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { text } = args;
             const result = await sendRequest("runtime.type_text", { text });
             return result;
@@ -553,7 +564,7 @@ export function registerEditorTools(tools, state) {
                 .describe("Output path. Supports absolute paths plus res://, user://, or project-relative paths."),
         }),
         handler: async (args) => {
-            ensureConnected();
+            await ensureConnected(state);
             const { path: screenshotPath } = args;
             const result = await sendRequest("runtime.capture_screenshot", {
                 path: normalizeRuntimeArtifactPath(screenshotPath, state.projectPath),
@@ -563,15 +574,46 @@ export function registerEditorTools(tools, state) {
     });
 }
 // Helper functions
-function ensureConnected() {
-    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
-        throw new Error("Not connected to Godot editor. Use godot_connect first.");
+// Single entry point for opening a bridge socket. Both godot_connect and the
+// lazy auto-connect in ensureConnected route through here so a shared in-flight
+// promise prevents two concurrent tool calls from opening duplicate sockets.
+function establishConnection(host, port, state) {
+    if (!connectInFlight) {
+        connectInFlight = connectToGodot(host, port, state).finally(() => {
+            connectInFlight = null;
+        });
+    }
+    return connectInFlight;
+}
+async function ensureConnected(state) {
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+        return;
+    }
+    // Connection state is per-MCP-process, so a fresh session always starts
+    // disconnected even when the editor is up — auto-connect lazily instead of
+    // making callers know about godot_connect. Reuse the host last established by
+    // godot_connect so a dropped remote bridge reconnects to the right target,
+    // not silently back to localhost.
+    try {
+        await establishConnection(state.editorHost || "127.0.0.1", state.editorPort, state);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Not connected to Godot editor and auto-connect failed (${message}). ` +
+            "Make sure Godot is running with the AI Bridge plugin enabled, or call godot_connect with an explicit host/port.");
     }
 }
 async function connectToGodot(host, port, state) {
     return new Promise((resolve, reject) => {
         const url = `ws://${host}:${port}`;
         try {
+            // Detach the previous socket's listeners before replacing it: a stale
+            // socket's later "close" event would otherwise run wsConnection = null and
+            // null out THIS new connection (and reject its pending requests).
+            if (wsConnection) {
+                wsConnection.removeAllListeners();
+                wsConnection.close();
+            }
             wsConnection = new WebSocket(url);
             const timeout = setTimeout(() => {
                 if (wsConnection) {
@@ -583,6 +625,7 @@ async function connectToGodot(host, port, state) {
             wsConnection.on("open", async () => {
                 clearTimeout(timeout);
                 state.editorConnected = true;
+                state.editorHost = host;
                 state.editorPort = port;
                 // Send initialization message
                 try {

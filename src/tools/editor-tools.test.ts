@@ -7,6 +7,7 @@ describe("editor tools", () => {
     registerEditorTools(tools as any, {
       projectPath: "/test/project",
       editorConnected: false,
+      editorHost: "127.0.0.1",
       editorPort: 6550,
     });
 
@@ -20,6 +21,7 @@ describe("editor tools", () => {
     registerEditorTools(tools as any, {
       projectPath: "/test/project",
       editorConnected: false,
+      editorHost: "127.0.0.1",
       editorPort: 6550,
     });
 

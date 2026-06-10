@@ -55,12 +55,14 @@ const resources: Map<string, ResourceHandler> = new Map();
 interface ServerState {
   projectPath: string | null;
   editorConnected: boolean;
+  editorHost: string;
   editorPort: number;
 }
 
 const state: ServerState = {
   projectPath: process.cwd(),
   editorConnected: false,
+  editorHost: "127.0.0.1",
   editorPort: 6550,
 };
 
@@ -328,7 +330,7 @@ function formatToolDescription(name: string, description: string): string {
   notes.push(`Operation: ${isReadOnly ? "Read-only" : "May modify files or editor state"}`);
 
   if (requiresEditorConnection) {
-    notes.push("Prerequisite: Requires an active Godot AI Bridge connection (`godot_connect`).");
+    notes.push("Prerequisite: Requires the Godot AI Bridge (editor running with the plugin enabled). Auto-connects on first use — `godot_connect` is only needed for a non-default host/port.");
   }
 
   if (!usesEditorBridgeTool(name)) {
@@ -350,6 +352,9 @@ async function main() {
       i++;
     } else if (args[i] === "--port" && args[i + 1]) {
       state.editorPort = parseInt(args[i + 1], 10);
+      i++;
+    } else if (args[i] === "--host" && args[i + 1]) {
+      state.editorHost = args[i + 1];
       i++;
     }
   }

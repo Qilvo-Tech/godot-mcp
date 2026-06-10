@@ -95,6 +95,7 @@ describe("Navigation Tools", () => {
     const state: ServerState = {
       projectPath: process.cwd(),
       editorConnected: false,
+      editorHost: "127.0.0.1",
       editorPort: 6550,
     };
 

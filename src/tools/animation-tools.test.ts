@@ -139,6 +139,7 @@ tracks/1/keys = {"times": PackedFloat32Array(0), "transitions": PackedFloat32Arr
     const state: ServerState = {
       projectPath: ".",
       editorConnected: false,
+      editorHost: "127.0.0.1",
       editorPort: 6550,
     };
 

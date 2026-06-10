@@ -494,7 +494,8 @@ const TOOL_GUIDE = {
         "Automating repeatable runtime checks",
         "Collaborative editing sessions",
       ],
-      prerequisite: "Must install AI Bridge plugin and call godot_connect first",
+      prerequisite:
+        "Must install AI Bridge plugin; editor tools auto-connect on first use (godot_connect only for non-default host/port)",
     },
 
     shaders: {
@@ -715,13 +716,13 @@ const TOOL_GUIDE = {
       "2. godot_modify_node - Apply shader to sprite material",
     ],
     "Live editing session": [
-      "1. godot_connect - Connect to Godot editor",
+      "1. godot_connect - Connect to Godot editor (optional — editor tools auto-connect on first use)",
       "2. godot_editor_get_scene_tree - Inspect current state",
       "3. godot_editor_add_node / godot_editor_modify_node - Make changes",
       "4. godot_editor_run_scene - Test immediately",
     ],
     "Runtime automation session": [
-      "1. godot_connect - Connect to Godot editor",
+      "1. godot_connect - Connect to Godot editor (optional — editor tools auto-connect on first use)",
       "2. godot_editor_run_scene - Start a debug session",
       "3. godot_runtime_status - Confirm the runtime harness is available",
       "4. godot_runtime_tap_action / godot_runtime_click - Drive interactions",
@@ -765,7 +766,7 @@ const TOOL_GUIDE = {
 
   tips: [
     "File-based tools (scenes, scripts, shaders) work without Godot running",
-    "Editor tools require the AI Bridge plugin enabled and godot_connect called",
+    "Editor tools require the AI Bridge plugin enabled; they auto-connect on first use",
     "Use godot_validate_scene/script to check for errors before running",
     "godot_analyze_script is great for understanding existing code",
     "Shader presets cover most common 2D effects - customize after generating",
@@ -1004,7 +1005,9 @@ function getToolPrerequisites(toolName: string): string[] {
   }
 
   if (toolName.startsWith("godot_editor_") || toolName.startsWith("godot_runtime_")) {
-    requirements.push("A successful `godot_connect` call in the current session.");
+    requirements.push(
+      "An AI Bridge connection (established automatically on the first editor/runtime tool call)."
+    );
   }
 
   return requirements;
@@ -1347,7 +1350,7 @@ export function registerDocsTools(
         }
 
         if (taskLower.includes("live") || taskLower.includes("editor") || taskLower.includes("real-time")) {
-          suggestions.push({ tool: "godot_connect", reason: "Connect to Godot editor first" });
+          suggestions.push({ tool: "godot_connect", reason: "Connect to Godot editor (optional — editor tools auto-connect)" });
           suggestions.push({ tool: "godot_editor_get_scene_tree", reason: "Inspect live scene" });
         }
 
@@ -1360,7 +1363,7 @@ export function registerDocsTools(
           taskLower.includes("type text") ||
           taskLower.includes("automate")
         ) {
-          suggestions.push({ tool: "godot_connect", reason: "Connect to Godot editor first" });
+          suggestions.push({ tool: "godot_connect", reason: "Connect to Godot editor (optional — editor tools auto-connect)" });
           suggestions.push({ tool: "godot_editor_run_scene", reason: "Start a runtime debug session" });
           suggestions.push({ tool: "godot_runtime_status", reason: "Confirm the runtime automation harness is available" });
           if (taskLower.includes("screenshot")) {
